@@ -2,7 +2,7 @@
 
 -----
 
-This is the CO2 branch of a fork of the Tasmota project (fork 92f067af made on 17 November 2020), used for the Covid-CO2 project. Changes made are:
+This is the CO2 branch of a fork of the Tasmota project (fork 92f067af made on 17 November 2020), used for the Covid-CO2 project (https://github.com/Arnold-n/Covid-CO2). Changes made are:
 
 In tasmota/xdrv_10_scripter.ino:
 If PRECONFIGURED_SCRIPT is defined, it will replace the initial dummy script.
@@ -11,7 +11,7 @@ If START_SCRIPT_FROM_BOOT is defined, script will be running from boot.
 In tasmota/xsns_15_mhz19.ino:
 If MHZ19B_ABC_DISABLE is defined, it will disable ABC (Automatic Baseline Calibration) (by default it is enabled).
 
-Configuration files, including preset script, for Winsen MH-Z19B, SenseAir S8 LP, or Sensirion SCD-30 CO2 sensor:
+Configuration files, including preset script, for Winsen MH-Z19B, SenseAir S8 LP, or Sensirion SCD30 CO2 sensor:
 tasmota/user_config_override_MHZ19B_ABC_disabled.h
 tasmota/user_config_override_MHZ19B_ABC_enabled.h
 tasmota/user_config_override_S8.h
