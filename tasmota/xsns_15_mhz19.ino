@@ -218,11 +218,17 @@ void MhzEverySecond(void)
 
     uint16_t u = (mhz_response[6] << 8) | mhz_response[7];
     if (15000 == u) {      // During (and only ever at) sensor boot, 'u' is reported as 15000
+// added MHZ19B_ABC_DISABLE switch for Covid-CO2 project:
+#ifdef MHZ19B_ABC_DISABLE
+      Settings->SensorBits1.mhz19b_abc_disable=1;
+      mhz_abc_must_apply = true;
+#else
       if (Settings->SensorBits1.mhz19b_abc_disable) {
         // After bootup of the sensor the ABC will be enabled.
         // Thus only actively disable after bootup.
         mhz_abc_must_apply = true;
       }
+#endif
     } else {
       uint16_t ppm = (mhz_response[2] << 8) | mhz_response[3];
       mhz_temperature = ConvertTemp((float)mhz_response[4] - 40);
@@ -330,6 +336,11 @@ void MhzInit(void)
     if (MhzSerial->begin(9600)) {
       if (MhzSerial->hardwareSerial()) { ClaimSerial(); }
       mhz_type = 1;
+// added MHZ19B_ABC_DISABLE switch for Covid-CO2 project:
+#ifdef MHZ19B_ABC_DISABLE
+      Settings.SensorBits1.mhz19b_abc_disable = 1;
+      mhz_abc_must_apply = true;
+#endif
     }
 
   }

@@ -1,5 +1,33 @@
 ![Tasmota logo](/tools/logo/TASMOTA_FullLogo_Vector.svg)
 
+-----
+
+This is the CO2 branch of a fork of the Tasmota project (with support added for the SCD40 and SCD41), used for the Covid-CO2 project (https://github.com/Arnold-n/Covid-CO2). Changes made are:
+
+In tasmota/xdrv_10_scripter.ino:
+If PRECONFIGURED_SCRIPT is defined, it will replace the initial dummy script.
+If START_SCRIPT_FROM_BOOT is defined, script will be running from boot.
+
+In tasmota/xsns_15_mhz19.ino:
+If MHZ19B_ABC_DISABLE is defined, it will disable ABC (Automatic Baseline Calibration) (by default it is enabled).
+
+Configuration files, including preset script, for Winsen MH-Z19B, SenseAir S8 LP, or Sensirion SCD30 CO2 sensor:
+tasmota/user_config_override_MHZ19B_ABC_disabled.h
+tasmota/user_config_override_MHZ19B_ABC_enabled.h
+tasmota/user_config_override_S8.h
+tasmota/user_config_override_SCD30.h
+tasmota/user_config_override_SCD40.h
+
+New files (PR pending for integration in Tasmota):
+tasmota/xsns_92_scd40.ino
+tasmota/lib/lib_i2c/FrogmoreScd40/FrogmoreScd40.h
+tasmota/lib/lib_i2c/FrogmoreScd40/FrogmoreScd40.cpp
+tasmota/lib/lib_i2c/FrogmoreScd40/library.properties
+
+The remainder of this README is the original README.
+
+-----
+
 Alternative firmware for [ESP8266](https://en.wikipedia.org/wiki/ESP8266) and [ESP32](https://en.wikipedia.org/wiki/ESP32) based devices with **easy configuration using webUI, OTA updates, automation using timers or rules, expandability and entirely local control over MQTT, HTTP, Serial or KNX**.
 _Written for PlatformIO with limited support for Arduino IDE._
 
