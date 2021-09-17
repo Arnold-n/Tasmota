@@ -1,7 +1,7 @@
 /*
   xnrg_08_sdm120.ino - Eastron SDM120-Modbus energy meter support for Tasmota
 
-  Copyright (C) 2020  Gennaro Tortone and Theo Arends
+  Copyright (C) 2021  Gennaro Tortone and Theo Arends
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -83,7 +83,7 @@ void SDM120Every250ms(void)
     AddLogBuffer(LOG_LEVEL_DEBUG_MORE, buffer, Sdm120Modbus->ReceiveCount());
 
     if (error) {
-      AddLog_P(LOG_LEVEL_DEBUG, PSTR("SDM: SDM120 error %d"), error);
+      AddLog(LOG_LEVEL_DEBUG, PSTR("SDM: SDM120 error %d"), error);
     } else {
       Energy.data_valid[0] = 0;
 
@@ -214,11 +214,11 @@ void Sdm220Show(bool json)
   if (isnan(Sdm120.import_active)) { return; }
 
   char import_active_chr[FLOATSZ];
-  dtostrfd(Sdm120.import_active, Settings.flag2.energy_resolution, import_active_chr);
+  dtostrfd(Sdm120.import_active, Settings->flag2.energy_resolution, import_active_chr);
   char import_reactive_chr[FLOATSZ];
-  dtostrfd(Sdm120.import_reactive, Settings.flag2.energy_resolution, import_reactive_chr);
+  dtostrfd(Sdm120.import_reactive, Settings->flag2.energy_resolution, import_reactive_chr);
   char export_reactive_chr[FLOATSZ];
-  dtostrfd(Sdm120.export_reactive, Settings.flag2.energy_resolution, export_reactive_chr);
+  dtostrfd(Sdm120.export_reactive, Settings->flag2.energy_resolution, export_reactive_chr);
   char phase_angle_chr[FLOATSZ];
   dtostrfd(Sdm120.phase_angle, 2, phase_angle_chr);
 

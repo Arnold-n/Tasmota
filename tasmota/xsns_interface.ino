@@ -1,7 +1,7 @@
 /*
   xsns_interface.ino - Sensor interface support for Tasmota
 
-  Copyright (C) 2020  Theo Arends inspired by ESPEasy
+  Copyright (C) 2021  Theo Arends inspired by ESPEasy
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -416,7 +416,119 @@ bool (* const xsns_func_ptr[])(uint8_t) = {  // Sensor Function Pointers for sim
 #endif
 
 #ifdef XSNS_99
-  &Xsns99
+  &Xsns99,
+#endif
+
+#ifdef XSNS_100
+  &Xsns100,
+#endif
+
+#ifdef XSNS_101
+  &Xsns101,
+#endif
+
+#ifdef XSNS_102
+  &Xsns102,
+#endif
+
+#ifdef XSNS_103
+  &Xsns103,
+#endif
+
+#ifdef XSNS_104
+  &Xsns104,
+#endif
+
+#ifdef XSNS_105
+  &Xsns105,
+#endif
+
+#ifdef XSNS_106
+  &Xsns106,
+#endif
+
+#ifdef XSNS_107
+  &Xsns107,
+#endif
+
+#ifdef XSNS_108
+  &Xsns108,
+#endif
+
+#ifdef XSNS_109
+  &Xsns109
+#endif
+
+#ifdef XSNS_110
+  &Xsns110,
+#endif
+
+#ifdef XSNS_111
+  &Xsns111,
+#endif
+
+#ifdef XSNS_112
+  &Xsns112,
+#endif
+
+#ifdef XSNS_113
+  &Xsns113,
+#endif
+
+#ifdef XSNS_114
+  &Xsns114,
+#endif
+
+#ifdef XSNS_115
+  &Xsns115,
+#endif
+
+#ifdef XSNS_116
+  &Xsns116,
+#endif
+
+#ifdef XSNS_117
+  &Xsns117,
+#endif
+
+#ifdef XSNS_118
+  &Xsns118,
+#endif
+
+#ifdef XSNS_119
+  &Xsns119,
+#endif
+
+#ifdef XSNS_120
+  &Xsns120,
+#endif
+
+#ifdef XSNS_121
+  &Xsns121,
+#endif
+
+#ifdef XSNS_122
+  &Xsns122,
+#endif
+
+#ifdef XSNS_123
+  &Xsns123,
+#endif
+
+#ifdef XSNS_124
+  &Xsns124,
+#endif
+
+#ifdef XSNS_125
+  &Xsns125,
+#endif
+
+#ifdef XSNS_126
+  &Xsns126,
+#endif
+
+#ifdef XSNS_127
+  &Xsns127
 #endif
 };
 
@@ -825,27 +937,143 @@ const uint8_t kXsnsList[] = {
 #endif
 
 #ifdef XSNS_99
-  XSNS_99
+  XSNS_99,
+#endif
+
+#ifdef XSNS_100
+  XSNS_100,
+#endif
+
+#ifdef XSNS_101
+  XSNS_101,
+#endif
+
+#ifdef XSNS_102
+  XSNS_102,
+#endif
+
+#ifdef XSNS_103
+  XSNS_103,
+#endif
+
+#ifdef XSNS_104
+  XSNS_104,
+#endif
+
+#ifdef XSNS_105
+  XSNS_105,
+#endif
+
+#ifdef XSNS_106
+  XSNS_106,
+#endif
+
+#ifdef XSNS_107
+  XSNS_107,
+#endif
+
+#ifdef XSNS_108
+  XSNS_108,
+#endif
+
+#ifdef XSNS_109
+  XSNS_109,
+#endif
+
+#ifdef XSNS_110
+  XSNS_110,
+#endif
+
+#ifdef XSNS_111
+  XSNS_111,
+#endif
+
+#ifdef XSNS_112
+  XSNS_112,
+#endif
+
+#ifdef XSNS_113
+  XSNS_113,
+#endif
+
+#ifdef XSNS_114
+  XSNS_114,
+#endif
+
+#ifdef XSNS_115
+  XSNS_115,
+#endif
+
+#ifdef XSNS_116
+  XSNS_116,
+#endif
+
+#ifdef XSNS_117
+  XSNS_117,
+#endif
+
+#ifdef XSNS_118
+  XSNS_118,
+#endif
+
+#ifdef XSNS_119
+  XSNS_119,
+#endif
+
+#ifdef XSNS_120
+  XSNS_120,
+#endif
+
+#ifdef XSNS_121
+  XSNS_121,
+#endif
+
+#ifdef XSNS_122
+  XSNS_122,
+#endif
+
+#ifdef XSNS_123
+  XSNS_123,
+#endif
+
+#ifdef XSNS_124
+  XSNS_124,
+#endif
+
+#ifdef XSNS_125
+  XSNS_125,
+#endif
+
+#ifdef XSNS_126
+  XSNS_126,
+#endif
+
+#ifdef XSNS_127
+  XSNS_127
 #endif
 };
 
 /*********************************************************************************************/
 
-bool XsnsEnabled(uint32_t sns_index)
-{
+bool XsnsEnabled(uint32_t sensor_list, uint32_t sns_index) {
+  // sensor_list 0 = sensors
+  // sensor_list 1 = web_sensors
   if (sns_index < sizeof(kXsnsList)) {
 #ifdef XFUNC_PTR_IN_ROM
     uint32_t index = pgm_read_byte(kXsnsList + sns_index);
 #else
     uint32_t index = kXsnsList[sns_index];
 #endif
-    return bitRead(Settings.sensors[index / 32], index % 32);
+    if (index < MAX_XSNS_DRIVERS) {
+      return bitRead(Settings->sensors[sensor_list][index / 32], index % 32);
+    }
   }
   return true;
 }
 
-void XsnsSensorState(void)
-{
+void XsnsSensorState(uint32_t sensor_list) {
+  // sensor_list 0 = sensors
+  // sensor_list 1 = web_sensors
   ResponseAppend_P(PSTR("\""));  // Use string for enable/disable signal
   for (uint32_t i = 0; i < sizeof(kXsnsList); i++) {
 #ifdef XFUNC_PTR_IN_ROM
@@ -855,7 +1083,7 @@ void XsnsSensorState(void)
 #endif
     bool disabled = false;
     if (sensorid < MAX_XSNS_DRIVERS) {
-      disabled = !bitRead(Settings.sensors[sensorid / 32], sensorid % 32);
+      disabled = !bitRead(Settings->sensors[sensor_list][sensorid / 32], sensorid % 32);
     }
     ResponseAppend_P(PSTR("%s%s%d"), (i) ? "," : "", (disabled) ? "!" : "", sensorid);
   }
@@ -866,8 +1094,7 @@ void XsnsSensorState(void)
  * Function call to all xsns
 \*********************************************************************************************/
 
-bool XsnsNextCall(uint8_t Function, uint8_t &xsns_index)
-{
+bool XsnsNextCall(uint8_t Function, uint8_t &xsns_index) {
   if (0 == xsns_present) {
     xsns_index = 0;
     return false;
@@ -875,24 +1102,16 @@ bool XsnsNextCall(uint8_t Function, uint8_t &xsns_index)
 
   xsns_index++;
   if (xsns_index == xsns_present) { xsns_index = 0; }
-
-#ifndef USE_DEBUG_DRIVER
-  if (FUNC_WEB_SENSOR == Function) {  // Skip web info for disabled sensors
-#endif
-    uint32_t max_disabled = xsns_present;
-    while (!XsnsEnabled(xsns_index) && max_disabled--) {  // Perform at least one sensor
-      xsns_index++;
-      if (xsns_index == xsns_present) { xsns_index = 0; }
-    }
-#ifndef USE_DEBUG_DRIVER
+  uint32_t max_disabled = xsns_present;
+  while ((!XsnsEnabled(0, xsns_index) || ((FUNC_WEB_SENSOR == Function) && !XsnsEnabled(1, xsns_index))) && max_disabled--) {  // Perform at least one sensor
+    xsns_index++;
+    if (xsns_index == xsns_present) { xsns_index = 0; }
   }
-#endif
 
   return xsns_func_ptr[xsns_index](Function);
 }
 
-bool XsnsCall(uint8_t Function)
-{
+bool XsnsCall(uint8_t Function) {
   bool result = false;
 
   DEBUG_TRACE_LOG(PSTR("SNS: %d"), Function);
@@ -902,11 +1121,8 @@ bool XsnsCall(uint8_t Function)
 #endif  // PROFILE_XSNS_EVERY_SECOND
 
   for (uint32_t x = 0; x < xsns_present; x++) {
-#ifdef USE_DEBUG_DRIVER
-    if (XsnsEnabled(x)) {  // Skip disabled sensor in debug mode
-#endif
-
-      if ((FUNC_WEB_SENSOR == Function) && !XsnsEnabled(x)) { continue; }  // Skip web info for disabled sensors
+    if (XsnsEnabled(0, x)) {  // Skip disabled sensor
+      if ((FUNC_WEB_SENSOR == Function) && !XsnsEnabled(1, x)) { continue; }  // Skip web info for disabled sensors
 
 #ifdef PROFILE_XSNS_SENSOR_EVERY_SECOND
       uint32_t profile_start_millis = millis();
@@ -917,7 +1133,7 @@ bool XsnsCall(uint8_t Function)
       uint32_t profile_millis = millis() - profile_start_millis;
       if (profile_millis) {
         if (FUNC_EVERY_SECOND == Function) {
-          AddLog_P(LOG_LEVEL_DEBUG, PSTR("PRF: At %08u XsnsCall %d to Sensor %d took %u mS"), TasmotaGlobal.uptime, Function, x, profile_millis);
+          AddLog(LOG_LEVEL_DEBUG, PSTR("PRF: At %08u XsnsCall %d to Sensor %d took %u mS"), TasmotaGlobal.uptime, Function, x, profile_millis);
         }
       }
 #endif  // PROFILE_XSNS_SENSOR_EVERY_SECOND
@@ -928,16 +1144,14 @@ bool XsnsCall(uint8_t Function)
                     )) {
         break;
       }
-#ifdef USE_DEBUG_DRIVER
     }
-#endif
   }
 
 #ifdef PROFILE_XSNS_EVERY_SECOND
   uint32_t profile_millis = millis() - profile_start_millis;
   if (profile_millis) {
     if (FUNC_EVERY_SECOND == Function) {
-      AddLog_P(LOG_LEVEL_DEBUG, PSTR("PRF: At %08u XsnsCall %d took %u mS"), TasmotaGlobal.uptime, Function, profile_millis);
+      AddLog(LOG_LEVEL_DEBUG, PSTR("PRF: At %08u XsnsCall %d took %u mS"), TasmotaGlobal.uptime, Function, profile_millis);
     }
   }
 #endif  // PROFILE_XSNS_EVERY_SECOND

@@ -1,7 +1,7 @@
 /*
   user_config_override.h - user configuration overrides my_user_config.h for Tasmota
 
-  Copyright (C) 2020  Theo Arends
+  Copyright (C) 2021  Theo Arends
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -19,9 +19,6 @@
 
 #ifndef _USER_CONFIG_OVERRIDE_H_
 #define _USER_CONFIG_OVERRIDE_H_
-
-// force the compiler to show a warning to confirm that this file is included
-#warning **** user_config_override.h: Using Settings from this File ****
 
 /*****************************************************************************************************\
  * USAGE:
@@ -69,19 +66,25 @@ Examples :
 
 #ifdef MY_IP
 #undef  WIFI_IP_ADDRESS
-#define WIFI_IP_ADDRESS   MY_IP                  // Set to 0.0.0.0 for using DHCP or enter a static IP address
+#define WIFI_IP_ADDRESS     MY_IP                // Set to 0.0.0.0 for using DHCP or enter a static IP address
 #endif
 
 #ifdef MY_GW
 #undef  WIFI_GATEWAY
-#define WIFI_GATEWAY      MY_GW                  // if not using DHCP set Gateway IP address
+#define WIFI_GATEWAY        MY_GW                // if not using DHCP set Gateway IP address
 #endif
 
 #ifdef MY_DNS
 #undef  WIFI_DNS
-#define WIFI_DNS          MY_DNS                 // If not using DHCP set DNS IP address (might be equal to WIFI_GATEWAY)
+#define WIFI_DNS            MY_DNS               // If not using DHCP set DNS IP address (might be equal to WIFI_GATEWAY)
 #endif
 
+#ifdef MY_DNS2
+#undef  WIFI_DNS2
+#define WIFI_DNS2           MY_DNS2              // If not using DHCP set DNS IP address (might be equal to WIFI_GATEWAY)
+#endif
+
+// !!! Remember that your changes GOES AT THE BOTTOM OF THIS FILE right before the last #endif !!!
 */
 
 

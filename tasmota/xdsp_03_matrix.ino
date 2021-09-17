@@ -1,7 +1,7 @@
 /*
   xdsp_03_matrix.ino - Display 8x8 matrix support for Tasmota
 
-  Copyright (C) 2020  Theo Arends and Adafruit
+  Copyright (C) 2021  Theo Arends and Adafruit
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -67,7 +67,7 @@ void MatrixFixed(char* txt)
     matrix[i]->clear();
     matrix[i]->setCursor(-i *8, 0);
     matrix[i]->print(txt);
-    matrix[i]->setBrightness(Settings.display_dimmer);
+    matrix[i]->setBrightness(GetDisplayDimmer16());
   }
   MatrixWrite();
 }
@@ -82,7 +82,7 @@ void MatrixCenter(char* txt)
     matrix[i]->clear();
     matrix[i]->setCursor(-(i *8)+offset, 0);
     matrix[i]->print(txt);
-    matrix[i]->setBrightness(Settings.display_dimmer);
+    matrix[i]->setBrightness(GetDisplayDimmer16());
   }
   MatrixWrite();
 }
@@ -95,18 +95,18 @@ void MatrixScrollLeft(char* txt, int loop)
     // Horiz. position of text -- starts off right edge
     mtx_x = 8 * mtx_matrices;
 
-    AddLog_P(LOG_LEVEL_DEBUG, PSTR(D_LOG_DEBUG "[%s]"), txt);
+    AddLog(LOG_LEVEL_DEBUG, PSTR(D_LOG_DEBUG "[%s]"), txt);
 
-    disp_refresh = Settings.display_refresh;
+    disp_refresh = Settings->display_refresh;
   case 2:
   disp_refresh--;
     if (!disp_refresh) {
-      disp_refresh = Settings.display_refresh;
+      disp_refresh = Settings->display_refresh;
       for (uint32_t i = 0; i < mtx_matrices; i++) {
         matrix[i]->clear();
         matrix[i]->setCursor(mtx_x - i *8, 0);
         matrix[i]->print(txt);
-        matrix[i]->setBrightness(Settings.display_dimmer);
+        matrix[i]->setBrightness(GetDisplayDimmer16());
       }
       MatrixWrite();
       // Move text position left by 1 pixel.
@@ -134,11 +134,11 @@ void MatrixScrollUp(char* txt, int loop)
     // Vertical position of text -- starts off left bottom edge
     mtx_y = 8;
     mtx_counter = 0;
-    disp_refresh = Settings.display_refresh;
+    disp_refresh = Settings->display_refresh;
   case 2:
     disp_refresh--;
     if (!disp_refresh) {
-      disp_refresh = Settings.display_refresh;
+      disp_refresh = Settings->display_refresh;
       strlcpy(tmpbuf, txt, sizeof(tmpbuf));
       char *p = strtok(tmpbuf, separators);
       while (p != nullptr && wordcounter < 40) {
@@ -151,7 +151,7 @@ void MatrixScrollUp(char* txt, int loop)
           matrix[i]->setCursor(-i *8, mtx_y + (j *8));
           matrix[i]->println(words[j]);
         }
-        matrix[i]->setBrightness(Settings.display_dimmer);
+        matrix[i]->setBrightness(GetDisplayDimmer16());
       }
       MatrixWrite();
       if (((mtx_y %8) == 0) && mtx_counter) {
@@ -171,11 +171,11 @@ void MatrixScrollUp(char* txt, int loop)
 void MatrixInitMode(void)
 {
   for (uint32_t i = 0; i < mtx_matrices; i++) {
-    matrix[i]->setRotation(Settings.display_rotate);  // 1
-    matrix[i]->setBrightness(Settings.display_dimmer);
+    matrix[i]->setRotation(Settings->display_rotate);  // 1
+    matrix[i]->setBrightness(GetDisplayDimmer16());
     matrix[i]->blinkRate(0);               // 0 - 3
     matrix[i]->setTextWrap(false);         // Allow text to run off edges
-//    matrix[i]->setTextSize(Settings.display_size);
+//    matrix[i]->setTextSize(Settings->display_size);
 //    matrix[i]->setTextColor(LED_RED);
     matrix[i]->cp437(true);
   }
@@ -194,32 +194,35 @@ void MatrixInit(uint8_t mode)
   }
 }
 
-void MatrixInitDriver(void)
-{
+void MatrixInitDriver(void) {
+  if (!TasmotaGlobal.i2c_enabled) { return; }
+
   mtx_buffer = (char*)(malloc(MTX_MAX_SCREEN_BUFFER));
   if (mtx_buffer != nullptr) {
-    if (!Settings.display_model) {
-      if (I2cSetDevice(Settings.display_address[1])) {
-        Settings.display_model = XDSP_03;
+    if (!Settings->display_model) {
+      if (I2cSetDevice(Settings->display_address[1])) {
+        Settings->display_model = XDSP_03;
       }
     }
 
-    if (XDSP_03 == Settings.display_model) {
+    if (XDSP_03 == Settings->display_model) {
       mtx_state = 1;
       for (mtx_matrices = 0; mtx_matrices < 8; mtx_matrices++) {
-        if (Settings.display_address[mtx_matrices]) {
-          I2cSetActiveFound(Settings.display_address[mtx_matrices], "8x8Matrix");
+        if (Settings->display_address[mtx_matrices]) {
+          I2cSetActiveFound(Settings->display_address[mtx_matrices], "8x8Matrix");
           matrix[mtx_matrices] = new Adafruit_8x8matrix();
-          matrix[mtx_matrices]->begin(Settings.display_address[mtx_matrices]);
+          matrix[mtx_matrices]->begin(Settings->display_address[mtx_matrices]);
         } else {
           break;
         }
       }
 
-      Settings.display_width = mtx_matrices * 8;
-      Settings.display_height = 8;
+      Settings->display_width = mtx_matrices * 8;
+      Settings->display_height = 8;
 
       MatrixInitMode();
+
+      AddLog(LOG_LEVEL_INFO, PSTR("DSP: 8x8Matrix"));
     }
   }
 }
@@ -265,7 +268,7 @@ void MatrixPrintLog(uint8_t direction)
         i++;
       }
 
-      AddLog_P(LOG_LEVEL_DEBUG, PSTR(D_LOG_APPLICATION "[%s]"), mtx_buffer);
+      AddLog(LOG_LEVEL_DEBUG, PSTR(D_LOG_APPLICATION "[%s]"), mtx_buffer);
 
       mtx_done = 1;
     }
@@ -289,7 +292,7 @@ void MatrixPrintLog(uint8_t direction)
 void MatrixRefresh(void)  // Every second
 {
   if (disp_power) {
-    switch (Settings.display_mode) {
+    switch (Settings->display_mode) {
       case 0: {
         switch (mtx_mode) {
           case 0:
@@ -339,7 +342,7 @@ bool Xdsp03(uint8_t function)
   if (FUNC_DISPLAY_INIT_DRIVER == function) {
     MatrixInitDriver();
   }
-  else if (XDSP_03 == Settings.display_model) {
+  else if (XDSP_03 == Settings->display_model) {
     switch (function) {
       case FUNC_DISPLAY_MODEL:
         result = true;

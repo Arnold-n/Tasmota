@@ -1,7 +1,7 @@
 /*
   xdrv_interface.ino - Driver interface support for Tasmota
 
-  Copyright (C) 2020  Theo Arends inspired by ESPEasy
+  Copyright (C) 2021  Theo Arends inspired by ESPEasy
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -416,7 +416,123 @@ bool (* const xdrv_func_ptr[])(uint8_t) = {   // Driver Function Pointers
 #endif
 
 #ifdef XDRV_99
-  &Xdrv99
+  &Xdrv99,
+#endif
+
+#ifdef XDRV_100
+  &Xdrv100,
+#endif
+
+#ifdef XDRV_101
+  &Xdrv101,
+#endif
+
+#ifdef XDRV_102
+  &Xdrv102,
+#endif
+
+#ifdef XDRV_103
+  &Xdrv103,
+#endif
+
+#ifdef XDRV_104
+  &Xdrv104,
+#endif
+
+#ifdef XDRV_105
+  &Xdrv105,
+#endif
+
+#ifdef XDRV_106
+  &Xdrv106,
+#endif
+
+#ifdef XDRV_107
+  &Xdrv107,
+#endif
+
+#ifdef XDRV_108
+  &Xdrv108,
+#endif
+
+#ifdef XDRV_109
+  &Xdrv109,
+#endif
+
+#ifdef XDRV_110
+  &Xdrv110,
+#endif
+
+#ifdef XDRV_111
+  &Xdrv111,
+#endif
+
+#ifdef XDRV_112
+  &Xdrv112,
+#endif
+
+#ifdef XDRV_113
+  &Xdrv113,
+#endif
+
+#ifdef XDRV_114
+  &Xdrv114,
+#endif
+
+#ifdef XDRV_115
+  &Xdrv115,
+#endif
+
+#ifdef XDRV_116
+  &Xdrv116,
+#endif
+
+#ifdef XDRV_117
+  &Xdrv117,
+#endif
+
+#ifdef XDRV_118
+  &Xdrv118,
+#endif
+
+#ifdef XDRV_119
+  &Xdrv119,
+#endif
+
+#ifdef XDRV_120
+  &Xdrv120,
+#endif
+
+#ifdef XDRV_121
+  &Xdrv121,
+#endif
+
+#ifdef XDRV_122
+  &Xdrv122,
+#endif
+
+#ifdef XDRV_123
+  &Xdrv123,
+#endif
+
+#ifdef XDRV_124
+  &Xdrv124,
+#endif
+
+#ifdef XDRV_125
+  &Xdrv125,
+#endif
+
+#ifdef XDRV_126
+  &Xdrv126,
+#endif
+
+#ifdef XDRV_127
+  &Xdrv127,
+#endif
+
+#ifdef XDRV_128
+  &Xdrv128
 #endif
 };
 
@@ -825,7 +941,123 @@ const uint8_t kXdrvList[] = {
 #endif
 
 #ifdef XDRV_99
-  XDRV_99
+  XDRV_99,
+#endif
+
+#ifdef XDRV_100
+  XDRV_100,
+#endif
+
+#ifdef XDRV_101
+  XDRV_101,
+#endif
+
+#ifdef XDRV_102
+  XDRV_102,
+#endif
+
+#ifdef XDRV_103
+  XDRV_103,
+#endif
+
+#ifdef XDRV_104
+  XDRV_104,
+#endif
+
+#ifdef XDRV_105
+  XDRV_105,
+#endif
+
+#ifdef XDRV_106
+  XDRV_106,
+#endif
+
+#ifdef XDRV_107
+  XDRV_107,
+#endif
+
+#ifdef XDRV_108
+  XDRV_108,
+#endif
+
+#ifdef XDRV_109
+  XDRV_109,
+#endif
+
+#ifdef XDRV_110
+  XDRV_110,
+#endif
+
+#ifdef XDRV_111
+  XDRV_111,
+#endif
+
+#ifdef XDRV_112
+  XDRV_112,
+#endif
+
+#ifdef XDRV_113
+  XDRV_113,
+#endif
+
+#ifdef XDRV_114
+  XDRV_114,
+#endif
+
+#ifdef XDRV_115
+  XDRV_115,
+#endif
+
+#ifdef XDRV_116
+  XDRV_116,
+#endif
+
+#ifdef XDRV_117
+  XDRV_117,
+#endif
+
+#ifdef XDRV_118
+  XDRV_118,
+#endif
+
+#ifdef XDRV_119
+  XDRV_119,
+#endif
+
+#ifdef XDRV_120
+  XDRV_120,
+#endif
+
+#ifdef XDRV_121
+  XDRV_121,
+#endif
+
+#ifdef XDRV_122
+  XDRV_122,
+#endif
+
+#ifdef XDRV_123
+  XDRV_123,
+#endif
+
+#ifdef XDRV_124
+  XDRV_124,
+#endif
+
+#ifdef XDRV_125
+  XDRV_125,
+#endif
+
+#ifdef XDRV_126
+  XDRV_126,
+#endif
+
+#ifdef XDRV_127
+  XDRV_127,
+#endif
+
+#ifdef XDRV_128
+  XDRV_128
 #endif
 };
 
@@ -847,9 +1079,23 @@ void XsnsDriverState(void)
 
 /*********************************************************************************************/
 
-bool XdrvRulesProcess(void)
-{
-  return XdrvCallDriver(10, FUNC_RULES_PROCESS);
+bool XdrvRulesProcess(bool teleperiod, const char* event) {
+  char* data_save = XdrvMailbox.data;
+  XdrvMailbox.data = (char*)event;
+  bool rule_handled = XdrvCallDriver(10, (teleperiod) ? FUNC_TELEPERIOD_RULES_PROCESS : FUNC_RULES_PROCESS);
+#if defined(USE_BERRY) && !defined(USE_RULES)
+  // events are sent to Berry in Rules driver, or here if USE_RULES is not defined (only on a subset)
+  bool berry_handled = XdrvCallDriver(52, FUNC_RULES_PROCESS);
+  rule_handled |= berry_handled;
+#endif
+  XdrvMailbox.data = data_save;
+  return rule_handled;
+}
+
+bool XdrvRulesProcess(bool teleperiod) {
+  bool result = XdrvRulesProcess(teleperiod, ResponseData());
+  ResponseClear();  // Free heap space
+  return result;
 }
 
 #ifdef USE_DEBUG_DRIVER

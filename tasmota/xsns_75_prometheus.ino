@@ -1,7 +1,7 @@
 /*
   xsns_75_prometheus.ino - Web based information for Tasmota
 
-  Copyright (C) 2020  Theo Arends
+  Copyright (C) 2021  Theo Arends
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -20,74 +20,329 @@
 #ifdef USE_PROMETHEUS
 /*********************************************************************************************\
  * Prometheus support
+ *
+ * The text format for metrics, labels and values is documented at [1]. Only
+ * the UTF-8 text encoding is supported. [2] describes how metrics and labels
+ * should be named.
+ *
+ * [1]
+ * https://github.com/prometheus/docs/blob/master/content/docs/instrumenting/exposition_formats.md
+ * [2]
+ * https://github.com/prometheus/docs/blob/master/content/docs/practices/naming.md
+ *
 \*********************************************************************************************/
 
 #define XSNS_75                    75
 
-void HandleMetrics(void)
+// Find appropriate unit for measurement type.
+const char *UnitfromType(const char *type)
 {
+  if (strcmp(type, "time") == 0) {
+    return "seconds";
+  }
+  if (strcmp(type, "temperature") == 0 || strcmp(type, "dewpoint") == 0) {
+    return "celsius";
+  }
+  if (strcmp(type, "pressure") == 0) {
+    return "hpa";
+  }
+  if (strcmp(type, "voltage") == 0) {
+    return "volts";
+  }
+  if (strcmp(type, "current") == 0) {
+    return "amperes";
+  }
+  if (strcmp(type, "mass") == 0) {
+    return "grams";
+  }
+  if (strcmp(type, "carbondioxide") == 0) {
+    return "ppm";
+  }
+  if (strcmp(type, "humidity") == 0) {
+    return "percentage";
+  }
+  if (strcmp(type, "id") == 0) {
+    return "untyped";
+  }
+  return "";
+}
+
+// Replace spaces and periods in metric name to match Prometheus metrics
+// convention.
+String FormatMetricName(const char *metric) {
+  String formatted = metric;
+  formatted.toLowerCase();
+  formatted.replace(" ", "_");
+  formatted.replace(".", "_");
+  return formatted;
+}
+
+const uint8_t
+  kPromMetricGauge = _BV(0),
+  kPromMetricCounter = _BV(1),
+  kPromMetricTypeMask = kPromMetricGauge | kPromMetricCounter;
+
+// Format and send a Prometheus metric to the client. Use flags to configure
+// the type. Labels must be supplied in tuples of two character array pointers
+// and terminated by nullptr.
+void WritePromMetric(const char *name, uint8_t flags, const char *value, va_list labels) {
+  PGM_P const prefix = PSTR("tasmota_");
+  PGM_P tmp;
+  String lval;
+
+  switch (flags & kPromMetricTypeMask) {
+  case kPromMetricGauge:
+    tmp = PSTR("gauge");
+    break;
+  case kPromMetricCounter:
+    tmp = PSTR("counter");
+    break;
+  default:
+    tmp = nullptr;
+    break;
+  }
+
+  if (tmp != nullptr) {
+    WSContentSend_P(PSTR("# TYPE %s%s %s\n"), prefix, name, tmp);
+  }
+
+  WSContentSend_P(PSTR("%s%s{"), prefix, name);
+
+  for (const char *sep = PSTR(""); ; sep = PSTR(",")) {
+    if ((tmp = va_arg(labels, PGM_P)) == nullptr) {
+      break;
+    }
+
+    // A few label values are stored in PROGMEM. The _P functions, e.g.
+    // snprintf_P, support both program and heap/stack memory with the "%s"
+    // format on ESP8266/ESP32. Casting the pointer to __FlashStringHelper has
+    // the same effect with String::operator=.
+    if (!(lval = va_arg(labels, const __FlashStringHelper *))) {
+      break;
+    }
+
+    // Labels can be any sequence of UTF-8 characters, but backslash,
+    // double-quote and line feed must be escaped.
+    lval.replace("\\", "\\\\");
+    lval.replace("\"", "\\\"");
+    lval.replace("\n", "\\n");
+
+    WSContentSend_P(PSTR("%s%s=\"%s\""), sep, tmp, lval.c_str());
+  }
+
+  WSContentSend_P(PSTR("} %s\n"), value);
+}
+
+void WritePromMetricInt32(const char *name, uint8_t flags, const int32_t value, ...) {
+  char str[16];
+
+  snprintf_P(str, sizeof(str), PSTR("%d"), value);
+
+  va_list labels;
+  va_start(labels, value);
+  WritePromMetric(name, flags, str, labels);
+  va_end(labels);
+}
+
+void WritePromMetricDec(const char *name, uint8_t flags, double number, unsigned char prec, ...) {
+  char value[FLOATSZ];
+
+  // Prometheus always requires "." as the decimal separator.
+  dtostrfd(number, prec, value);
+
+  va_list labels;
+  va_start(labels, prec);
+  WritePromMetric(name, flags, value, labels);
+  va_end(labels);
+}
+
+void WritePromMetricStr(const char *name, uint8_t flags, const char *value, ...) {
+  va_list labels;
+  va_start(labels, value);
+  WritePromMetric(name, flags, value, labels);
+  va_end(labels);
+}
+
+// Sentinel value for unknown memory metrics, chosen to unlikely match actual
+// values.
+const uint32_t kPromMemoryUnknown = 0xFFFFFFFF - 1;
+
+// Write metrics providing information about used and available memory.
+void WritePromMemoryMetrics(const char *type, uint32_t size, uint32_t avail, uint32_t max_alloc) {
+  if (size != kPromMemoryUnknown) {
+    WritePromMetricInt32(PSTR("memory_size_bytes"), kPromMetricGauge, size,
+      PSTR("memory"), type, nullptr);
+  }
+
+  WritePromMetricInt32(PSTR("memory_free_bytes"), kPromMetricGauge, avail,
+    PSTR("memory"), type, nullptr);
+
+  if (max_alloc != kPromMemoryUnknown) {
+    // The largest contiguous free memory block, useful for checking
+    // fragmentation.
+    WritePromMetricInt32(PSTR("memory_max_alloc_bytes"), kPromMetricGauge, max_alloc,
+      PSTR("memory"), type, nullptr);
+  }
+}
+
+void HandleMetrics(void) {
   if (!HttpCheckPriviledgedAccess()) { return; }
 
-  AddLog_P(LOG_LEVEL_DEBUG, PSTR(D_LOG_HTTP "Prometheus"));
+  AddLog(LOG_LEVEL_DEBUG, PSTR(D_LOG_HTTP "Prometheus"));
 
   WSContentBegin(200, CT_PLAIN);
 
-
-  char parameter[FLOATSZ];
+  char namebuf[64];
 
   // Pseudo-metric providing metadata about the running firmware version.
-  WSContentSend_P(PSTR("# TYPE tasmota_info gauge\ntasmota_info{version=\"%s\",image=\"%s\",build_timestamp=\"%s\"} 1\n"),
-                  TasmotaGlobal.version, TasmotaGlobal.image_name, GetBuildDateAndTime().c_str());
-  WSContentSend_P(PSTR("# TYPE tasmota_uptime_seconds gauge\ntasmota_uptime_seconds %d\n"), TasmotaGlobal.uptime);
-  WSContentSend_P(PSTR("# TYPE tasmota_boot_count counter\ntasmota_boot_count %d\n"), Settings.bootcount);
-  WSContentSend_P(PSTR("# TYPE tasmota_flash_writes_total counter\ntasmota_flash_writes_total %d\n"), Settings.save_flag);
+  WritePromMetricInt32(PSTR("info"), kPromMetricGauge, 1,
+    PSTR("version"), TasmotaGlobal.version,
+    PSTR("image"), TasmotaGlobal.image_name,
+    PSTR("build_timestamp"), GetBuildDateAndTime().c_str(),
+    PSTR("devicename"), SettingsText(SET_DEVICENAME),
+    nullptr);
 
+  WritePromMetricInt32(PSTR("uptime_seconds"), kPromMetricGauge, TasmotaGlobal.uptime, nullptr);
+  WritePromMetricInt32(PSTR("boot_count"), kPromMetricCounter, Settings->bootcount, nullptr);
+  WritePromMetricInt32(PSTR("flash_writes_total"), kPromMetricCounter, Settings->save_flag, nullptr);
 
   // Pseudo-metric providing metadata about the WiFi station.
-  WSContentSend_P(PSTR("# TYPE tasmota_wifi_station_info gauge\ntasmota_wifi_station_info{bssid=\"%s\",ssid=\"%s\"} 1\n"), WiFi.BSSIDstr().c_str(), WiFi.SSID().c_str());
+  WritePromMetricInt32(PSTR("wifi_station_info"), kPromMetricGauge, 1,
+    PSTR("bssid"), WiFi.BSSIDstr().c_str(),
+    PSTR("ssid"), WiFi.SSID().c_str(),
+    nullptr);
 
   // Wi-Fi Signal strength
-  WSContentSend_P(PSTR("# TYPE tasmota_wifi_station_signal_dbm gauge\ntasmota_wifi_station_signal_dbm{mac_address=\"%s\"} %d\n"), WiFi.BSSIDstr().c_str(), WiFi.RSSI());
+  WritePromMetricInt32(PSTR("wifi_station_signal_dbm"), kPromMetricGauge, WiFi.RSSI(),
+    PSTR("mac_address"), WiFi.BSSIDstr().c_str(),
+    nullptr);
 
   if (!isnan(TasmotaGlobal.temperature_celsius)) {
-    dtostrfd(TasmotaGlobal.temperature_celsius, Settings.flag2.temperature_resolution, parameter);
-    WSContentSend_P(PSTR("# TYPE tasmotaglobal_temperature_celsius gauge\ntasmotaglobal_temperature_celsius %s\n"), parameter);
-  }
-  if (TasmotaGlobal.humidity != 0) {
-    dtostrfd(TasmotaGlobal.humidity, Settings.flag2.humidity_resolution, parameter);
-    WSContentSend_P(PSTR("# TYPE tasmotaglobal_humidity gauge\ntasmotaglobal_humidity %s\n"), parameter);
-  }
-  if (TasmotaGlobal.pressure_hpa != 0) {
-    dtostrfd(TasmotaGlobal.pressure_hpa, Settings.flag2.pressure_resolution, parameter);
-    WSContentSend_P(PSTR("# TYPE tasmotaglobal_pressure_hpa gauge\ntasmotaglobal_pressure_hpa %s\n"), parameter);
+    WritePromMetricDec(PSTR("global_temperature_celsius"), kPromMetricGauge,
+      TasmotaGlobal.temperature_celsius, Settings->flag2.temperature_resolution,
+      nullptr);
   }
 
-#ifdef USE_ENERGY_SENSOR
-  dtostrfd(Energy.voltage[0], Settings.flag2.voltage_resolution, parameter);
-  WSContentSend_P(PSTR("# TYPE energy_voltage_volts gauge\nenergy_voltage_volts %s\n"), parameter);
-  dtostrfd(Energy.current[0], Settings.flag2.current_resolution, parameter);
-  WSContentSend_P(PSTR("# TYPE energy_current_amperes gauge\nenergy_current_amperes %s\n"), parameter);
-  dtostrfd(Energy.active_power[0], Settings.flag2.wattage_resolution, parameter);
-  WSContentSend_P(PSTR("# TYPE energy_power_active_watts gauge\nenergy_power_active_watts %s\n"), parameter);
-  dtostrfd(Energy.daily, Settings.flag2.energy_resolution, parameter);
-  WSContentSend_P(PSTR("# TYPE energy_power_kilowatts_daily counter\nenergy_power_kilowatts_daily %s\n"), parameter);
-  dtostrfd(Energy.total, Settings.flag2.energy_resolution, parameter);
-  WSContentSend_P(PSTR("# TYPE energy_power_kilowatts_total counter\nenergy_power_kilowatts_total %s\n"), parameter);
+  if (TasmotaGlobal.humidity != 0) {
+    WritePromMetricDec(PSTR("global_humidity_percentage"), kPromMetricGauge,
+      TasmotaGlobal.humidity, Settings->flag2.humidity_resolution,
+      nullptr);
+  }
+
+  if (TasmotaGlobal.pressure_hpa != 0) {
+    WritePromMetricDec(PSTR("global_pressure_hpa"), kPromMetricGauge,
+      TasmotaGlobal.pressure_hpa, Settings->flag2.pressure_resolution,
+      nullptr);
+  }
+
+  WritePromMemoryMetrics(PSTR("heap"),
+#ifdef ESP32
+    ESP.getHeapSize(),
+#else
+    kPromMemoryUnknown,
+#endif
+    ESP_getFreeHeap(),
+#ifdef ESP32
+    ESP_getMaxAllocHeap()
+#else
+    kPromMemoryUnknown
+#endif
+  );
+
+#ifdef ESP32
+  if (UsePSRAM()) {
+    WritePromMemoryMetrics(PSTR("psram"), ESP.getPsramSize(),
+      ESP.getFreePsram(), ESP.getMaxAllocPsram());
+  }
 #endif
 
-/*
-  // Alternative method using the complete sensor JSON data
-  // For prometheus it may need to be decoded to # TYPE messages
+#ifdef USE_ENERGY_SENSOR
+  WritePromMetricDec(PSTR("energy_voltage_volts"),
+    kPromMetricGauge,
+    Energy.voltage[0], Settings->flag2.voltage_resolution, nullptr);
+  WritePromMetricDec(PSTR("energy_current_amperes"),
+    kPromMetricGauge,
+    Energy.current[0], Settings->flag2.current_resolution, nullptr);
+  WritePromMetricDec(PSTR("energy_power_active_watts"),
+    kPromMetricGauge,
+    Energy.active_power[0], Settings->flag2.wattage_resolution, nullptr);
+  WritePromMetricDec(PSTR("energy_power_kilowatts_daily"),
+    kPromMetricCounter,
+    Energy.daily, Settings->flag2.energy_resolution, nullptr);
+  WritePromMetricDec(PSTR("energy_power_kilowatts_total"),
+    kPromMetricCounter,
+    Energy.total, Settings->flag2.energy_resolution, nullptr);
+#endif
+
+  for (uint32_t device = 0; device < TasmotaGlobal.devices_present; device++) {
+    power_t mask = 1 << device;
+    snprintf_P(namebuf, sizeof(namebuf), PSTR("relay%d_state"), device + 1);
+    WritePromMetricInt32(namebuf, kPromMetricGauge,
+      (TasmotaGlobal.power & mask), nullptr);
+  }
+
   ResponseClear();
-  MqttShowSensor();
-  char json[strlen(TasmotaGlobal.mqtt_data) +1];
-  snprintf_P(json, sizeof(json), TasmotaGlobal.mqtt_data);
+  MqttShowSensor(); //Pull sensor data
+  String jsonStr = ResponseData();
+  JsonParser parser((char *)jsonStr.c_str());
+  JsonParserObject root = parser.getRootObject();
+  if (root) { // did JSON parsing succeed?
+    for (auto key1 : root) {
+      JsonParserToken value1 = key1.getValue();
+      if (value1.isObject()) {
+        JsonParserObject Object2 = value1.getObject();
+        for (auto key2 : Object2) {
+          JsonParserToken value2 = key2.getValue();
+          if (value2.isObject()) {
+            JsonParserObject Object3 = value2.getObject();
+            for (auto key3 : Object3) {
+              const char *value = key3.getValue().getStr(nullptr);
+              if (value != nullptr && isdigit(value[0])) {
+                String sensor = FormatMetricName(key2.getStr());
+                String type = FormatMetricName(key3.getStr());
 
-  // Do your Prometheus specific processing here.
-  // Look at function DisplayAnalyzeJson() in file xdrv_13_display.ino as an example how to decode the JSON message
+                snprintf_P(namebuf, sizeof(namebuf), PSTR("sensors_%s_%s"),
+                  type.c_str(), UnitfromType(type.c_str()));
+                WritePromMetricStr(namebuf, kPromMetricGauge, value,
+                  PSTR("sensor"), sensor.c_str(),
+                  nullptr);
+              }
+            }
+          } else {
+            const char *value = value2.getStr(nullptr);
+            if (value != nullptr && isdigit(value[0])) {
+              String sensor = FormatMetricName(key1.getStr());
+              String type = FormatMetricName(key2.getStr());
+              if (strcmp(type.c_str(), "totalstarttime") != 0) {  // this metric causes Prometheus of fail
+                snprintf_P(namebuf, sizeof(namebuf), PSTR("sensors_%s_%s"),
+                  type.c_str(), UnitfromType(type.c_str()));
 
-  WSContentSend_P(json);
-*/
+                if (strcmp(type.c_str(), "id") == 0) {            // this metric is NaN, so convert it to a label, see Wi-Fi metrics above
+                  WritePromMetricInt32(namebuf, kPromMetricGauge, 1,
+                    PSTR("sensor"), sensor.c_str(),
+                    PSTR("id"), value,
+                    nullptr);
+                } else {
+                  WritePromMetricStr(namebuf, kPromMetricGauge, value,
+                    PSTR("sensor"), sensor.c_str(),
+                    nullptr);
+                }
+              }
+            }
+          }
+        }
+      } else {
+        const char *value = value1.getStr(nullptr);
+        String sensor = FormatMetricName(key1.getStr());
+
+        if (value != nullptr && isdigit(value[0] && strcmp(sensor.c_str(), "time") != 0)) {  //remove false 'time' metric
+          WritePromMetricStr(PSTR("sensors"), kPromMetricGauge, value,
+            PSTR("sensor"), sensor.c_str(),
+            nullptr);
+        }
+      }
+    }
+  }
 
   WSContentEnd();
 }
@@ -96,8 +351,7 @@ void HandleMetrics(void)
  * Interface
 \*********************************************************************************************/
 
-bool Xsns75(uint8_t function)
-{
+bool Xsns75(uint8_t function) {
   bool result = false;
 
   switch (function) {

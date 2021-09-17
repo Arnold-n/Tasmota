@@ -1,7 +1,7 @@
 /*
   xsns_78_ezoprs.ino - EZO PRS I2C PRS sensor support for Tasmota
 
-  Copyright (C) 2020  Christopher Tremblay
+  Copyright (C) 2021  Christopher Tremblay
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -37,20 +37,19 @@ struct EZOPRS : public EZOStruct {
   {
     char str[33];
     char sealevelstr[33];
-    dtostrfd(ConvertPressure(pressure), Settings.flag2.pressure_resolution, str);
-    dtostrfd(ConvertPressureForSeaLevel(pressure), Settings.flag2.pressure_resolution, sealevelstr);
+    dtostrfd(ConvertPressure(pressure), Settings->flag2.pressure_resolution, str);
+    dtostrfd(ConvertPressureForSeaLevel(pressure), Settings->flag2.pressure_resolution, sealevelstr);
 
     if (json) {
       ResponseAppend_P(PSTR(",\"%s\":{\"" D_JSON_PRESSURE "\":%s"), name, str);
-      if (Settings.altitude != 0) {
+      if (Settings->altitude != 0) {
         ResponseAppend_P(PSTR(",\"" D_JSON_PRESSUREATSEALEVEL "\":%s"), sealevelstr);
       }
       ResponseJsonEnd();
-    }
-#ifdef USE_WEBSERVER  
-    else {
+#ifdef USE_WEBSERVER
+    }else {
       WSContentSend_PD(HTTP_SNS_PRESSURE, name, str, PressureUnit().c_str());
-      if (Settings.altitude != 0) {
+      if (Settings->altitude != 0) {
         WSContentSend_PD(HTTP_SNS_SEAPRESSURE, name, sealevelstr, PressureUnit().c_str());
       }
 #endif  // USE_WEBSERVER

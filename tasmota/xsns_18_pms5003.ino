@@ -1,7 +1,7 @@
 /*
   xsns_18_pms5003.ino - PMS3003, PMS5003, PMS7003 particle concentration sensor support for Tasmota
 
-  Copyright (C) 2020  Theo Arends
+  Copyright (C) 2021  Theo Arends
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -48,6 +48,7 @@ struct PMS5003 {
   uint8_t valid = 0;
   uint8_t wake_mode = 1;
   uint8_t ready = 1;
+  bool discovery_triggered = false;
 } Pms;
 
 enum PmsCommands
@@ -98,7 +99,7 @@ bool PmsReadData(void)
     PmsSerial->read();
   }
 #ifdef PMS_MODEL_PMS3003
-  if (PmsSerial->available() < 22) {
+  if (PmsSerial->available() < 24) {
 #else
   if (PmsSerial->available() < 32) {
 #endif  // PMS_MODEL_PMS3003
@@ -106,8 +107,8 @@ bool PmsReadData(void)
   }
 
 #ifdef PMS_MODEL_PMS3003
-  uint8_t buffer[22];
-  PmsSerial->readBytes(buffer, 22);
+  uint8_t buffer[24];
+  PmsSerial->readBytes(buffer, 24);
 #else
   uint8_t buffer[32];
   PmsSerial->readBytes(buffer, 32);
@@ -116,14 +117,14 @@ bool PmsReadData(void)
   PmsSerial->flush();  // Make room for another burst
 
 #ifdef PMS_MODEL_PMS3003
-  AddLogBuffer(LOG_LEVEL_DEBUG_MORE, buffer, 22);
+  AddLogBuffer(LOG_LEVEL_DEBUG_MORE, buffer, 24);
 #else
   AddLogBuffer(LOG_LEVEL_DEBUG_MORE, buffer, 32);
 #endif  // PMS_MODEL_PMS3003
 
   // get checksum ready
 #ifdef PMS_MODEL_PMS3003
-  for (uint32_t i = 0; i < 20; i++) {
+  for (uint32_t i = 0; i < 22; i++) {
 #else
   for (uint32_t i = 0; i < 30; i++) {
 #endif  // PMS_MODEL_PMS3003
@@ -131,8 +132,8 @@ bool PmsReadData(void)
   }
   // The data comes in endian'd, this solves it so it works on all platforms
 #ifdef PMS_MODEL_PMS3003
-  uint16_t buffer_u16[10];
-  for (uint32_t i = 0; i < 10; i++) {
+  uint16_t buffer_u16[12];
+  for (uint32_t i = 0; i < 12; i++) {
 #else
   uint16_t buffer_u16[15];
   for (uint32_t i = 0; i < 15; i++) {
@@ -141,20 +142,25 @@ bool PmsReadData(void)
     buffer_u16[i] += (buffer[2 + i*2] << 8);
   }
 #ifdef PMS_MODEL_PMS3003
-  if (sum != buffer_u16[9]) {
+  if (sum != buffer_u16[10]) {
 #else
   if (sum != buffer_u16[14]) {
 #endif  // PMS_MODEL_PMS3003
-    AddLog_P(LOG_LEVEL_DEBUG, PSTR("PMS: " D_CHECKSUM_FAILURE));
+    AddLog(LOG_LEVEL_DEBUG, PSTR("PMS: " D_CHECKSUM_FAILURE));
     return false;
   }
 
 #ifdef PMS_MODEL_PMS3003
-  memcpy((void *)&pms_data, (void *)buffer_u16, 20);
+  memcpy((void *)&pms_data, (void *)buffer_u16, 22);
 #else
   memcpy((void *)&pms_data, (void *)buffer_u16, 30);
 #endif  // PMS_MODEL_PMS3003
   Pms.valid = 10;
+
+  if (!Pms.discovery_triggered) {
+    TasmotaGlobal.discovery_counter = 1;      // Force discovery
+    Pms.discovery_triggered = true;
+  }
 
   return true;
 }
@@ -174,14 +180,14 @@ bool PmsCommandSensor(void)
   if (PinUsed(GPIO_PMS5003_TX) && (XdrvMailbox.payload >= 0) && (XdrvMailbox.payload < 32001)) {
     if (XdrvMailbox.payload < MIN_INTERVAL_PERIOD) {
       // Set Active Mode if interval is less than 60 seconds
-      Settings.pms_wake_interval = 0;
+      Settings->pms_wake_interval = 0;
       Pms.wake_mode = 1;
       Pms.ready = 1;
       PmsSendCmd(CMD_MODE_ACTIVE);
       PmsSendCmd(CMD_WAKEUP);
     } else {
       // Set Passive Mode and schedule read once per interval time
-      Settings.pms_wake_interval = XdrvMailbox.payload;
+      Settings->pms_wake_interval = XdrvMailbox.payload;
       PmsSendCmd(CMD_MODE_PASSIVE);
       PmsSendCmd(CMD_SLEEP);
       Pms.wake_mode = 0;
@@ -189,7 +195,7 @@ bool PmsCommandSensor(void)
     }
   }
 
-  Response_P(S_JSON_SENSOR_INDEX_NVALUE, XSNS_18, Settings.pms_wake_interval);
+  Response_P(S_JSON_SENSOR_INDEX_NVALUE, XSNS_18, Settings->pms_wake_interval);
 
   return true;
 }
@@ -198,15 +204,15 @@ bool PmsCommandSensor(void)
 
 void PmsSecond(void)                 // Every second
 {
-  if (Settings.pms_wake_interval >= MIN_INTERVAL_PERIOD) {
+  if (Settings->pms_wake_interval >= MIN_INTERVAL_PERIOD) {
     // Passive Mode
     Pms.time++;
-    if ((Settings.pms_wake_interval - Pms.time <= WARMUP_PERIOD) && !Pms.wake_mode) {
+    if ((Settings->pms_wake_interval - Pms.time <= WARMUP_PERIOD) && !Pms.wake_mode) {
       // wakeup sensor WARMUP_PERIOD before read interval
       Pms.wake_mode = 1;
       PmsSendCmd(CMD_WAKEUP);
     }
-    if (Pms.time >= Settings.pms_wake_interval) {
+    if (Pms.time >= Settings->pms_wake_interval) {
       // sensor is awake and warmed up, set up for reading
       PmsSendCmd(CMD_READ_DATA);
       Pms.ready = 1;
@@ -217,7 +223,7 @@ void PmsSecond(void)                 // Every second
   if (Pms.ready) {
     if (PmsReadData()) {
       Pms.valid = 10;
-      if (Settings.pms_wake_interval >= MIN_INTERVAL_PERIOD) {
+      if (Settings->pms_wake_interval >= MIN_INTERVAL_PERIOD) {
         PmsSendCmd(CMD_SLEEP);
         Pms.wake_mode = 0;
         Pms.ready = 0;
@@ -225,7 +231,7 @@ void PmsSecond(void)                 // Every second
     } else {
       if (Pms.valid) {
         Pms.valid--;
-        if (Settings.pms_wake_interval >= MIN_INTERVAL_PERIOD) {
+        if (Settings->pms_wake_interval >= MIN_INTERVAL_PERIOD) {
           PmsSendCmd(CMD_READ_DATA);
           Pms.ready = 1;
         }
@@ -245,15 +251,15 @@ void PmsInit(void)
       if (PmsSerial->hardwareSerial()) { ClaimSerial(); }
 
       if (!PinUsed(GPIO_PMS5003_TX)) {  // setting interval not supported if TX pin not connected
-        Settings.pms_wake_interval = 0;
+        Settings->pms_wake_interval = 0;
         Pms.ready = 1;
       } else {
-        if (Settings.pms_wake_interval >= MIN_INTERVAL_PERIOD) {
+        if (Settings->pms_wake_interval >= MIN_INTERVAL_PERIOD) {
           // Passive Mode
           PmsSendCmd(CMD_MODE_PASSIVE);
           Pms.wake_mode = 0;
           Pms.ready = 0;
-          Pms.time = Settings.pms_wake_interval - WARMUP_PERIOD; // Let it wake up in the next second
+          Pms.time = Settings->pms_wake_interval - WARMUP_PERIOD; // Let it wake up in the next second
         }
       }
 

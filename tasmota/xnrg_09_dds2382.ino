@@ -1,7 +1,7 @@
 /*
   xnrg_09_dds2382.ino - Hiking DDS238-2 Modbus energy meter support for Tasmota
 
-  Copyright (C) 2020  Matteo Campanella - based on the work of Gennaro Tortone
+  Copyright (C) 2021  Matteo Campanella - based on the work of Gennaro Tortone
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -50,7 +50,7 @@ void Dds2382EverySecond(void)
     AddLogBuffer(LOG_LEVEL_DEBUG_MORE, buffer, Dds2382Modbus->ReceiveCount());
 
     if (error) {
-      AddLog_P(LOG_LEVEL_DEBUG, PSTR(D_LOG_DEBUG "DDS2382 response error %d"), error);
+      AddLog(LOG_LEVEL_DEBUG, PSTR(D_LOG_DEBUG "DDS2382 response error %d"), error);
     } else {
       Energy.data_valid[0] = 0;
 
@@ -67,11 +67,11 @@ void Dds2382EverySecond(void)
       Energy.voltage[0] = (float)((buffer[27] << 8) + buffer[28]) / 10.0;
       Energy.current[0] = (float)((buffer[29] << 8) + buffer[30]) / 100.0;
       Energy.active_power[0] = (float)((buffer[31] << 8) + buffer[32]);
-      Energy.reactive_power[0] = (float)((buffer[33] << 8) + buffer[34]);
+      Energy.reactive_power[0] = (float)(int16_t)((buffer[33] << 8) + buffer[34]);
       Energy.power_factor[0] = (float)((buffer[35] << 8) + buffer[36]) / 1000.0;                                          // 1.00
       Energy.frequency[0] = (float)((buffer[37] << 8) + buffer[38]) / 100.0;                                              // 50.0 Hz
       uint8_t offset = 11;
-      if (Settings.flag3.dds2382_model) {  // SetOption71 - Select different Modbus registers for Active Energy (#6531)
+      if (Settings->flag3.dds2382_model) {  // SetOption71 - Select different Modbus registers for Active Energy (#6531)
         offset = 19;
       }
       Energy.export_active[0] = (float)((buffer[offset] << 24) + (buffer[offset +1] << 16) + (buffer[offset +2] << 8) + buffer[offset +3]) / 100.0;    // 429496.729 kW

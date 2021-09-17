@@ -1,7 +1,7 @@
 /*
   xdrv_29_deepsleep.ino - DeepSleep support for Tasmota
 
-  Copyright (C) 2020  Stefan Bode
+  Copyright (C) 2021  Stefan Bode
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -49,8 +49,8 @@ uint8_t deepsleep_flag = 0;
 
 bool DeepSleepEnabled(void)
 {
-  if ((Settings.deepsleep < 10) || (Settings.deepsleep > DEEPSLEEP_MAX)) {
-    Settings.deepsleep = 0;     // Issue #6961
+  if ((Settings->deepsleep < 10) || (Settings->deepsleep > DEEPSLEEP_MAX)) {
+    Settings->deepsleep = 0;     // Issue #6961
     return false;               // Disabled
   }
 
@@ -68,15 +68,16 @@ void DeepSleepReInit(void)
     if ((RtcSettings.ultradeepsleep > DEEPSLEEP_MAX_CYCLE) && (RtcSettings.ultradeepsleep < 1700000000)) {
       // Go back to sleep after 60 minutes if requested deepsleep has not been reached
       RtcSettings.ultradeepsleep = RtcSettings.ultradeepsleep - DEEPSLEEP_MAX_CYCLE;
-      AddLog_P(LOG_LEVEL_ERROR, PSTR("DSL: Remain DeepSleep %d"), RtcSettings.ultradeepsleep);
+      AddLog(LOG_LEVEL_ERROR, PSTR("DSL: Remain DeepSleep %d"), RtcSettings.ultradeepsleep);
       RtcSettingsSave();
       RtcRebootReset();
 #ifdef ESP8266
       ESP.deepSleep(100 * RtcSettings.deepsleep_slip * (DEEPSLEEP_MAX_CYCLE < RtcSettings.ultradeepsleep ? DEEPSLEEP_MAX_CYCLE : RtcSettings.ultradeepsleep), WAKE_RF_DEFAULT);
-#else  // ESP32
+#endif  // ESP8266
+#ifdef ESP32
       esp_sleep_enable_timer_wakeup(100 * RtcSettings.deepsleep_slip * (DEEPSLEEP_MAX_CYCLE < RtcSettings.ultradeepsleep ? DEEPSLEEP_MAX_CYCLE : RtcSettings.ultradeepsleep));
       esp_deep_sleep_start();
-#endif  // ESP8266 or ESP32
+#endif  // ESP32
       yield();
       // Sleeping
     }
@@ -94,8 +95,8 @@ void DeepSleepPrepare(void)
   if ((RtcSettings.nextwakeup == 0) ||
       (RtcSettings.deepsleep_slip < 9000) ||
       (RtcSettings.deepsleep_slip > 11000) ||
-      (RtcSettings.nextwakeup > (UtcTime() + Settings.deepsleep))) {
-    AddLog_P(LOG_LEVEL_ERROR, PSTR("DSL: Reset wrong settings wakeup: %ld, slip %ld"), RtcSettings.nextwakeup, RtcSettings.deepsleep_slip );
+      (RtcSettings.nextwakeup > (UtcTime() + Settings->deepsleep))) {
+    AddLog(LOG_LEVEL_ERROR, PSTR("DSL: Reset wrong settings wakeup: %ld, slip %ld"), RtcSettings.nextwakeup, RtcSettings.deepsleep_slip );
     RtcSettings.nextwakeup = 0;
     RtcSettings.deepsleep_slip = 10000;
   }
@@ -106,19 +107,19 @@ void DeepSleepPrepare(void)
 
   // Allow 10% of deepsleep error to count as valid deepsleep; expecting 3-4%
   // if more then 10% timeslip = 0 == non valid wakeup; maybe manual
-  timeslip = (timeslip < -(int32_t)Settings.deepsleep) ? 0 : (timeslip > (int32_t)Settings.deepsleep) ? 0 : 1;
+  timeslip = (timeslip < -(int32_t)Settings->deepsleep) ? 0 : (timeslip > (int32_t)Settings->deepsleep) ? 0 : 1;
   if (timeslip) {
-    RtcSettings.deepsleep_slip = (Settings.deepsleep + RtcSettings.nextwakeup - UtcTime()) * RtcSettings.deepsleep_slip / tmax((Settings.deepsleep - (millis() / 1000)),5);
+    RtcSettings.deepsleep_slip = (Settings->deepsleep + RtcSettings.nextwakeup - UtcTime()) * RtcSettings.deepsleep_slip / tmax((Settings->deepsleep - (millis() / 1000)),5);
     // Avoid crazy numbers. Again maximum 10% deviation.
     RtcSettings.deepsleep_slip = tmin(tmax(RtcSettings.deepsleep_slip, 9000), 11000);
-    RtcSettings.nextwakeup += Settings.deepsleep;
+    RtcSettings.nextwakeup += Settings->deepsleep;
   }
 
   // It may happen that wakeup in just <5 seconds in future
   // In this case also add deepsleep to nextwakeup
   if (RtcSettings.nextwakeup <= (UtcTime() - DEEPSLEEP_MIN_TIME)) {
     // ensure nextwakeup is at least in the future
-    RtcSettings.nextwakeup += (((UtcTime() + DEEPSLEEP_MIN_TIME - RtcSettings.nextwakeup) / Settings.deepsleep) + 1) * Settings.deepsleep;
+    RtcSettings.nextwakeup += (((UtcTime() + DEEPSLEEP_MIN_TIME - RtcSettings.nextwakeup) / Settings->deepsleep) + 1) * Settings->deepsleep;
   }
 
   String dt = GetDT(RtcSettings.nextwakeup + LocalTime() - UtcTime());  // 2017-03-07T11:08:02
@@ -126,27 +127,29 @@ void DeepSleepPrepare(void)
   // uint32_t deepsleep_sleeptime = DEEPSLEEP_MAX_CYCLE < (RtcSettings.nextwakeup - UtcTime()) ? (uint32_t)DEEPSLEEP_MAX_CYCLE : RtcSettings.nextwakeup - UtcTime();
   deepsleep_sleeptime = tmin((uint32_t)DEEPSLEEP_MAX_CYCLE ,RtcSettings.nextwakeup - UtcTime());
 
-  // stat/tasmota/STATUS = {"DeepSleep":{"Time":"2019-11-12T21:33:45","Epoch":1573590825}}
+  // stat/tasmota/DEEPSLEEP = {"DeepSleep":{"Time":"2019-11-12T21:33:45","Epoch":1573590825}}
   Response_P(PSTR("{\"" D_PRFX_DEEPSLEEP "\":{\"" D_JSON_TIME "\":\"%s\",\"Epoch\":%d}}"), (char*)dt.c_str(), RtcSettings.nextwakeup);
-  MqttPublishPrefixTopic_P(RESULT_OR_STAT, PSTR(D_CMND_STATUS));
+  MqttPublishPrefixTopicRulesProcess_P(RESULT_OR_STAT, PSTR(D_PRFX_DEEPSLEEP));
 
 //  Response_P(S_LWT_OFFLINE);
-//  MqttPublishPrefixTopic_P(TELE, PSTR(D_LWT), true);  // Offline or remove previous retained topic
+//  MqttPublishPrefixTopicRulesProcess_P(TELE, PSTR(D_LWT), true);  // Offline or remove previous retained topic
 }
 
 void DeepSleepStart(void)
 {
-  AddLog_P(LOG_LEVEL_INFO, PSTR(D_LOG_APPLICATION "Sleeping"));  // Won't show in GUI
+  AddLog(LOG_LEVEL_INFO, PSTR(D_LOG_APPLICATION "Sleeping"));  // Won't show in GUI
 
   WifiShutdown();
   RtcSettings.ultradeepsleep = RtcSettings.nextwakeup - UtcTime();
   RtcSettingsSave();
+  RtcRebootReset();
 #ifdef ESP8266
   ESP.deepSleep(100 * RtcSettings.deepsleep_slip * deepsleep_sleeptime);
-#else  // ESP32
+#endif  // ESP8266
+#ifdef ESP32
   esp_sleep_enable_timer_wakeup(100 * RtcSettings.deepsleep_slip * deepsleep_sleeptime);
   esp_deep_sleep_start();
-#endif  // ESP8266 or ESP32
+#endif  // ESP32
   yield();
 }
 
@@ -176,16 +179,16 @@ void CmndDeepsleepTime(void)
 {
   if ((0 == XdrvMailbox.payload) ||
      ((XdrvMailbox.payload > 10) && (XdrvMailbox.payload < DEEPSLEEP_MAX))) {
-    Settings.deepsleep = XdrvMailbox.payload;
+    Settings->deepsleep = XdrvMailbox.payload;
     RtcSettings.nextwakeup = 0;
     deepsleep_flag = (0 == XdrvMailbox.payload) ? 0 : DEEPSLEEP_START_COUNTDOWN;
     if (deepsleep_flag) {
-      if (!Settings.tele_period) {
-        Settings.tele_period = TELE_PERIOD;  // Need teleperiod to go back to sleep
+      if (!Settings->tele_period) {
+        Settings->tele_period = TELE_PERIOD;  // Need teleperiod to go back to sleep
       }
     }
   }
-  Response_P(S_JSON_COMMAND_NVALUE, XdrvMailbox.command, Settings.deepsleep);
+  ResponseCmndNumber(Settings->deepsleep);
 }
 
 /*********************************************************************************************\
@@ -201,7 +204,7 @@ bool Xdrv29(uint8_t function)
       DeepSleepEverySecond();
       break;
     case FUNC_AFTER_TELEPERIOD:
-        if (DeepSleepEnabled() && !deepsleep_flag && (Settings.tele_period == 10 || Settings.tele_period == 300 || UpTime() > Settings.tele_period)) {
+        if (DeepSleepEnabled() && !deepsleep_flag && (Settings->tele_period == 10 || Settings->tele_period == 300 || UpTime() > Settings->tele_period)) {
         deepsleep_flag = DEEPSLEEP_START_COUNTDOWN;  // Start deepsleep in 4 seconds
       }
       break;

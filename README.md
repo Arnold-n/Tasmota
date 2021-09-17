@@ -2,7 +2,7 @@
 
 -----
 
-This is the CO2 branch of a fork of the Tasmota project (fork 92f067af made on 17 November 2020), used for the Covid-CO2 project (https://github.com/Arnold-n/Covid-CO2). Changes made are:
+This is the CO2 branch of a fork of the Tasmota project (with support added for the SCD40 and SCD41), used for the Covid-CO2 project (https://github.com/Arnold-n/Covid-CO2). Changes made are:
 
 In tasmota/xdrv_10_scripter.ino:
 If PRECONFIGURED_SCRIPT is defined, it will replace the initial dummy script.
@@ -16,16 +16,22 @@ tasmota/user_config_override_MHZ19B_ABC_disabled.h
 tasmota/user_config_override_MHZ19B_ABC_enabled.h
 tasmota/user_config_override_S8.h
 tasmota/user_config_override_SCD30.h
+tasmota/user_config_override_SCD40.h
+
+New files (PR pending for integration in Tasmota):
+tasmota/xsns_92_scd40.ino
+tasmota/lib/lib_i2c/FrogmoreScd40/FrogmoreScd40.h
+tasmota/lib/lib_i2c/FrogmoreScd40/FrogmoreScd40.cpp
+tasmota/lib/lib_i2c/FrogmoreScd40/library.properties
 
 The remainder of this README is the original README.
 
 -----
 
-
-Alternative firmware for [ESP8266](https://en.wikipedia.org/wiki/ESP8266) based devices with **easy configuration using webUI, OTA updates, automation using timers or rules, expandability and entirely local control over MQTT, HTTP, Serial or KNX**.
+Alternative firmware for [ESP8266](https://en.wikipedia.org/wiki/ESP8266) and [ESP32](https://en.wikipedia.org/wiki/ESP32) based devices with **easy configuration using webUI, OTA updates, automation using timers or rules, expandability and entirely local control over MQTT, HTTP, Serial or KNX**.
 _Written for PlatformIO with limited support for Arduino IDE._
 
-[![GitHub version](https://img.shields.io/github/release/arendst/Tasmota.svg)](https://github.com/arendst/Tasmota/releases/latest)
+[![GitHub version](https://img.shields.io/github/release/arendst/Tasmota.svg)](http://ota.tasmota.com/tasmota/release)
 [![GitHub download](https://img.shields.io/github/downloads/arendst/Tasmota/total.svg)](https://github.com/arendst/Tasmota/releases/latest)
 [![License](https://img.shields.io/github/license/arendst/Tasmota.svg)](LICENSE.txt)
 [![Chat](https://img.shields.io/discord/479389167382691863.svg)](https://discord.gg/Ks2Kzd4)
@@ -39,11 +45,13 @@ If you like **Tasmota**, give it a star, or fork it and contribute!
 
 See [RELEASENOTES.md](https://github.com/arendst/Tasmota/blob/master/RELEASENOTES.md) for release information.
 
-In addition to the [release webpage](https://github.com/arendst/Tasmota/releases/latest) the binaries can also be downloaded from http://ota.tasmota.com/tasmota/release/
+Firmware binaries can be downloaded from http://ota.tasmota.com/tasmota/release/ or http://ota.tasmota.com/tasmota32/release/ for ESP32 binaries.
+
+Easy initial installation of Tasmota can be performed using the [Tasmota WebInstaller](https://arendst.github.io/Tasmota-firmware/).
 
 ## Development
 
-[![Dev Version](https://img.shields.io/badge/development%20version-v9.1.x.x-blue.svg)](https://github.com/arendst/Tasmota)
+[![Dev Version](https://img.shields.io/badge/development%20version-v9.5.x.x-blue.svg)](https://github.com/arendst/Tasmota)
 [![Download Dev](https://img.shields.io/badge/download-development-yellow.svg)](http://ota.tasmota.com/tasmota/)
 [![Tasmota CI](https://github.com/arendst/Tasmota/workflows/Tasmota%20CI/badge.svg)](https://github.com/arendst/Tasmota/actions?query=workflow%3A%22Tasmota+CI%22)
 [![Tasmota ESP32 CI](https://github.com/arendst/Tasmota/workflows/Tasmota%20ESP32%20CI/badge.svg)](https://github.com/arendst/Tasmota/actions?query=workflow%3A%22Tasmota+ESP32+CI%22)
@@ -53,7 +61,7 @@ See [CHANGELOG.md](CHANGELOG.md) for detailed change information.
 
 Unless your Tasmota powered device exhibits a problem or you need to make use of a feature that is not available in the Tasmota version currently installed on your device, leave your device alone - it works so don't make unnecessary changes! If the release version (i.e., the master branch) exhibits unexpected behaviour for your device and configuration, you should upgrade to the latest development version instead to see if your problem is resolved as some bugs in previous releases or development builds may already have been resolved.
 
-The Tasmota development codebase is checked every 1-2 hours for changes. If new commits have been merged and they compile successfuly, new binary files for every variant will be posted at http://ota.tasmota.com/tasmota/ (this web address can be used for OTA updates too). It is important to note that these binaries are based on the current development codebase. These commits are tested as much as is possible and are typically quite stable. However, it is infeasible to test on the hundreds of different types of devices with all the available configuration options permitted.
+Every commit made to the development branch, which is compiling successfuly, will post new binary files at http://ota.tasmota.com/tasmota/ (this web address can be used for OTA updates too). It is important to note that these binaries are based on the current development codebase. These commits are tested as much as is possible and are typically quite stable. However, it is infeasible to test on the hundreds of different types of devices with all the available configuration options permitted.
 
 Note that there is a chance, as with any upgrade, that the device may not function as expected. You must always account for the possibility that you may need to flash the device via the serial programming interface if the OTA upgrade fails. Even with the master release, you should always attempt to test the device or a similar prototype before upgrading a device which is in production or is hard to reach. And, as always, make a backup of the device configuration before beginning any firmware update.
 
@@ -67,16 +75,16 @@ We don't take any responsibility nor liability for using this software nor for t
 
 ## Note
 
-Please do not ask to add new devices unless it requires additional code for new features. If the device is not listed as a module, try using [Templates](https://tasmota.github.io/docs/Templates) first. If it is not listed in the [Tasmota Device Templates Repository](http://blakadder.github.io/templates) create your own [Template](https://tasmota.github.io/docs/Templates#creating-your-template).
+Please do not ask to add new devices unless it requires additional code for new features. If the device is not listed as a module, try using [Templates](https://tasmota.github.io/docs/Templates) first. If it is not listed in the [Tasmota Device Templates Repository](http://templates.blakadder.com) create your own [Template](https://tasmota.github.io/docs/Templates#creating-your-template).
 
 ## Quick Install
-Download one of the released binaries from https://github.com/arendst/Tasmota/releases and flash it to your hardware [using our installation guide](https://tasmota.github.io/docs/Getting-Started).
+Download one of the released binaries from http://ota.tasmota.com/tasmota/release/ or http://ota.tasmota.com/tasmota32/release/ and flash it to your hardware [using our installation guide](https://tasmota.github.io/docs/Getting-Started).
 
 ## Important User Compilation Information
 If you want to compile Tasmota yourself keep in mind the following:
 
-- Only Flash Mode **DOUT** is supported. Do not use Flash Mode DIO / QIO / QOUT as it might seem to brick your device.
-- Tasmota uses a 1M linker script WITHOUT spiffs **1M (no SPIFFS)** for optimal code space.
+- For ESP8285 based devices only Flash Mode **DOUT** is supported. Do not use Flash Mode DIO / QIO / QOUT as it might seem to brick your device.
+- For ESP8285 based devices Tasmota uses a 1M linker script WITHOUT spiffs **1M (no SPIFFS)** for optimal code space.
 - To make compile time changes to Tasmota use the `user_config_override.h` file. It assures keeping your custom settings when you download and compile a new version. You have to make a copy from the provided `user_config_override_sample.h` file and add your setting overrides.
 
 ## Configuration Information
@@ -119,24 +127,18 @@ If you're looking for support on **Tasmota** there are some options available:
 
 ### Support's Community
 
-* [Tasmota Forum](https://groups.google.com/d/forum/sonoffusers): For usage and discussions.
-* [Tasmota Support Chat](https://discord.gg/Ks2Kzd4): For support, troubleshooting and general questions. You have better chances to get fast answers from members of the Tasmota Community.
+* [Tasmota Discussions](https://github.com/arendst/Tasmota/discussions): For Tasmota usage questions, Feature Requests and Projects.
+* [Tasmota Users Chat](https://discord.gg/Ks2Kzd4): For support, troubleshooting and general questions. You have better chances to get fast answers from members of the Tasmota Community.
 * [Search in Issues](https://github.com/arendst/Tasmota/issues): You might find an answer to your question by searching current or closed issues.
-
-### Developers' Community
-
-* [Bug Report](https://github.com/arendst/Tasmota/issues/new?template=Bug_report.md): For reporting Bugs of Tasmota Software.
-* [Feature Request](https://github.com/arendst/Tasmota/issues/new?template=Feature_request.md): For requesting features/functions to Tasmota Software.
-* [Troubleshooting](https://github.com/arendst/Tasmota/issues/new?template=Custom.md): As a last resort, you can open new *Troubleshooting* issue on GitHub if the solution could not be found using the other channels. Just remember: the more info you provide the more chances you'll have to get an accurate answer.
-* [Issue a question](https://github.com/arendst/Tasmota/issues/new/choose): As a last resort, you can open a new *Question* issue on GitHub if the answer could not be found using the other channels. Just remember: the more info you provide the more chances you'll have to get an accurate answer.
+* [Software Problem Report](https://github.com/arendst/Tasmota/issues/new?template=Bug_report.md): For reporting problems of Tasmota Software.
 
 ## Contribute
 
 You can contribute to Tasmota by
-- providing Pull Requests (Features, Proof of Concepts, Language files or Fixes)
-- testing new released features and report issues
-- donating to acquire hardware for testing and implementing or out of gratitude
-- contributing missing [documentation](https://tasmota.github.io/docs) for features and devices
+- Providing Pull Requests (Features, Proof of Concepts, Language files or Fixes)
+- Testing new released features and report issues
+- Donating to acquire hardware for testing and implementing or out of gratitude
+- Contributing missing [documentation](https://tasmota.github.io/docs) for features and devices
 
 [![donate](https://img.shields.io/badge/donate-PayPal-blue.svg)](https://paypal.me/tasmota)
 
@@ -153,6 +155,7 @@ People helping to keep the show on the road:
 - Flexiti for his initial timer implementation
 - reloxx13 for his [TasmoAdmin](https://github.com/reloxx13/TasmoAdmin) management tool
 - Joachim Banzhaf for his TSL2561 library and driver
+- Andre Thomas for providing many drivers
 - Gijs Noorlander for his MHZ19, SenseAir and updated PubSubClient drivers
 - Erik Montnemery for his HomeAssistant Discovery concept and many code tuning tips
 - Federico Leoni for continued HomeAssistant Discovery support
@@ -164,12 +167,11 @@ People helping to keep the show on the road:
 - Gennaro Tortone for implementing and maintaining Eastron drivers
 - Raymond Mouthaan for managing Wemos Wiki information
 - Norbert Richter for his [decode-config.py](https://github.com/tasmota/decode-config) tool
-- Andre Thomas for providing [thehackbox](http://thehackbox.org/tasmota/) OTA support and daily development builds
 - Joel Stein, digiblur and Shantur Rathore for their Tuya research and driver
 - Frogmore42 for providing many issue answers
 - Jason2866 for platformio support and providing many issue answers
 - Blakadder for managing the new document site and providing template management
-- Stephan Hadinger for refactoring light driver, enhancing HueEmulation and Zigbee support
+- Stephan Hadinger for refactoring light driver, enhancing HueEmulation, LVGL, Zigbee and Berry support
 - tmo for designing the official Tasmota logo
 - Stefan Bode for his Shutter and Deep sleep drivers
 - Jacek Ziółkowski for his [TDM](https://github.com/jziolkowski/tdm) management tool and [Tasmotizer](https://github.com/tasmota/tasmotizer) flashing tool

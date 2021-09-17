@@ -1,7 +1,7 @@
 /*
   xdrv_19_ps16dz.dimmer.ino - PS_16_DZ dimmer support for Tasmota
 
-  Copyright (C) 2020  Joel Stein and Theo Arends
+  Copyright (C) 2021  Joel Stein and Theo Arends
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -43,7 +43,7 @@ struct PS16DZ {
 
 void PS16DZSerialSend(const char *tx_buffer)
 {
-//  AddLog_P(LOG_LEVEL_DEBUG, PSTR("PSZ: Send %s"), tx_buffer);
+//  AddLog(LOG_LEVEL_DEBUG, PSTR("PSZ: Send %s"), tx_buffer);
 
   PS16DZSerial->print(tx_buffer);
   PS16DZSerial->write(0x1B);
@@ -64,8 +64,8 @@ void PS16DZSerialSendUpdateCommand(void)
 {
   uint8_t light_state_dimmer = light_state.getDimmer();
   // Dimming acts odd below 10% - this mirrors the threshold set on the faceplate itself
-  light_state_dimmer = (light_state_dimmer < Settings.dimmer_hw_min) ? Settings.dimmer_hw_min : light_state_dimmer;
-  light_state_dimmer = (light_state_dimmer > Settings.dimmer_hw_max) ? Settings.dimmer_hw_max : light_state_dimmer;
+  light_state_dimmer = (light_state_dimmer < Settings->dimmer_hw_min) ? Settings->dimmer_hw_min : light_state_dimmer;
+  light_state_dimmer = (light_state_dimmer > Settings->dimmer_hw_max) ? Settings->dimmer_hw_max : light_state_dimmer;
 
   char tx_buffer[80];
   snprintf_P(tx_buffer, sizeof(tx_buffer), PSTR("AT+UPDATE=\"sequence\":\"%d%03d\",\"switch\":\"%s\",\"bright\":%d"),
@@ -96,7 +96,7 @@ void PS16DZSerialInput(void)
       Ps16dz.rx_buffer[Ps16dz.byte_counter++] = 0x00;
 
       // AT+RESULT="sequence":"1554682835320"
-//      AddLog_P(LOG_LEVEL_DEBUG, PSTR("PSZ: Rcvd %s"), Ps16dz.rx_buffer);
+//      AddLog(LOG_LEVEL_DEBUG, PSTR("PSZ: Rcvd %s"), Ps16dz.rx_buffer);
 
       if (!strncmp(Ps16dz.rx_buffer+3, "RESULT", 6)) {
 
@@ -118,7 +118,7 @@ void PS16DZSerialInput(void)
           if (!strncmp(token2, "\"switch\"", 8)) {
             bool switch_state = !strncmp(token3, "\"on\"", 4) ? true : false;
 
-//            AddLog_P(LOG_LEVEL_DEBUG, PSTR("PSZ: Switch %d"), switch_state);
+//            AddLog(LOG_LEVEL_DEBUG, PSTR("PSZ: Switch %d"), switch_state);
 
             is_switch_change = (switch_state != TasmotaGlobal.power);
             if (is_switch_change) {
@@ -128,9 +128,9 @@ void PS16DZSerialInput(void)
           else if (!strncmp(token2, "\"bright\"", 8)) {
             Ps16dz.dimmer = atoi(token3);
 
-//            AddLog_P(LOG_LEVEL_DEBUG, PSTR("PSZ: Brightness %d"), Ps16dz.dimmer);
+//            AddLog(LOG_LEVEL_DEBUG, PSTR("PSZ: Brightness %d"), Ps16dz.dimmer);
 
-            is_brightness_change = Ps16dz.dimmer != Settings.light_dimmer;
+            is_brightness_change = Ps16dz.dimmer != Settings->light_dimmer;
             if (TasmotaGlobal.power && (Ps16dz.dimmer > 0) && is_brightness_change) {
               snprintf_P(scmnd, sizeof(scmnd), PSTR(D_CMND_DIMMER " %d"), Ps16dz.dimmer);
               ExecuteCommand(scmnd, SRC_SWITCH);
@@ -138,7 +138,7 @@ void PS16DZSerialInput(void)
           }
           else if (!strncmp(token2, "\"sequence\"", 10)) {
 
-//            AddLog_P(LOG_LEVEL_DEBUG, PSTR("PSZ: Sequence %s"), token3);
+//            AddLog(LOG_LEVEL_DEBUG, PSTR("PSZ: Sequence %s"), token3);
 
           }
           token = strtok_r(nullptr, ",", &end_str);
@@ -146,7 +146,7 @@ void PS16DZSerialInput(void)
 
         if (!is_brightness_change) {
 
-//          AddLog_P(LOG_LEVEL_DEBUG, PSTR("PSZ: Update"));
+//          AddLog(LOG_LEVEL_DEBUG, PSTR("PSZ: Update"));
 
           PS16DZSerialSendOk();
         }
@@ -154,10 +154,10 @@ void PS16DZSerialInput(void)
       else if (!strncmp(Ps16dz.rx_buffer+3, "SETTING", 7)) {
         // AT+SETTING=enterESPTOUCH - When ON button is held for over 5 seconds
         // AT+SETTING=exitESPTOUCH  - When ON button is pressed
-        if (!Settings.flag.button_restrict) {  // SetOption1 - Control button multipress
+        if (!Settings->flag.button_restrict) {  // SetOption1 - Control button multipress
           int state = WIFI_MANAGER;
           if (!strncmp(Ps16dz.rx_buffer+10, "=exit", 5)) { state = WIFI_RETRY; }
-          if (state != Settings.sta_config) {
+          if (state != Settings->sta_config) {
             snprintf_P(scmnd, sizeof(scmnd), PSTR(D_CMND_WIFICONFIG " %d"), state);
             ExecuteCommand(scmnd, SRC_BUTTON);
           }

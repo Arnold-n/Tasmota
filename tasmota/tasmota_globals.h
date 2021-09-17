@@ -1,7 +1,7 @@
 /*
   tasmota_globals.h - Function prototypes and global configurations for Tasmota
 
-  Copyright (C) 2020  Theo Arends
+  Copyright (C) 2021  Theo Arends
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -46,13 +46,13 @@ extern "C" int startWaveformClockCycles(uint8_t pin, uint32_t highCcys, uint32_t
   uint32_t runTimeCcys, int8_t alignPhase, uint32_t phaseOffsetCcys, bool autoPwm);
 
 #ifdef ESP32
-
+#if CONFIG_IDF_TARGET_ESP32       // ESP32/PICO-D4
 #ifdef USE_ETHERNET
 IPAddress EthernetLocalIP(void);
 char* EthernetHostname(void);
 String EthernetMacAddress(void);
-#endif
-
+#endif  // USE_ETHERNET
+#endif  // CONFIG_IDF_TARGET_ESP32
 #endif  // ESP32
 
 /*********************************************************************************************\
@@ -62,32 +62,116 @@ String EthernetMacAddress(void);
 #include "tasmota_configurations.h"            // Preconfigured configurations
 
 /*********************************************************************************************\
- * Mandatory defines satisfying disabled defines
+ * ESP8266 specific parameters
 \*********************************************************************************************/
 
-#ifdef USE_EMULATION_HUE
-#define USE_EMULATION
+#ifdef ESP8266
+
+#ifndef MODULE
+#define MODULE                      SONOFF_BASIC   // [Module] Select default model
 #endif
-#ifdef USE_EMULATION_WEMO
-#define USE_EMULATION
+#ifndef FALLBACK_MODULE
+#define FALLBACK_MODULE             SONOFF_BASIC   // [Module2] Select default module on fast reboot where USER_MODULE is user template
 #endif
 
-// Convert legacy slave to client
-#ifdef USE_TASMOTA_SLAVE
-#define USE_TASMOTA_CLIENT
-#endif
-#ifdef USE_TASMOTA_SLAVE_FLASH_SPEED
-#define USE_TASMOTA_CLIENT_FLASH_SPEED USE_TASMOTA_SLAVE_FLASH_SPEED
-#endif
-#ifdef USE_TASMOTA_SLAVE_SERIAL_SPEED
-#define USE_TASMOTA_CLIENT_SERIAL_SPEED USE_TASMOTA_SLAVE_SERIAL_SPEED
+#ifndef ARDUINO_ESP8266_RELEASE
+#define ARDUINO_CORE_RELEASE        "STAGE"
+#else
+#define ARDUINO_CORE_RELEASE        ARDUINO_ESP8266_RELEASE
+#endif  // ARDUINO_ESP8266_RELEASE
+
+#ifndef USE_ADC_VCC
+#define USE_ADC
+#else
+#undef USE_ADC
 #endif
 
+#endif  // ESP8266
+
+/*********************************************************************************************\
+ * ESP32 specific parameters
+\*********************************************************************************************/
+
+#ifdef ESP32
+
+/*-------------------------------------------------------------------------------------------*\
+ * Start ESP32-S2 specific parameters - disable features not present in ESP32-S2
+\*-------------------------------------------------------------------------------------------*/
+
+#if CONFIG_IDF_TARGET_ESP32S2                      // ESP32-S2
+#ifdef USE_ETHERNET
+#undef USE_ETHERNET                                // ESP32-S2 does not support ethernet
+#endif
+#ifdef USE_BLE_ESP32
+#undef USE_BLE_ESP32                               // ESP32-S2 does not support BLE
+#endif
+#ifdef USE_MI_ESP32
+#undef USE_MI_ESP32                                // ESP32-S2 does not support BLE
+#endif
+#ifdef USE_IBEACON_ESP32
+#undef USE_IBEACON_ESP32                           // ESP32-S2 does not support BLE
+#endif
+#endif  // CONFIG_IDF_TARGET_ESP32S2
+
+/*-------------------------------------------------------------------------------------------*\
+ * End ESP32-S2 specific parameters
+\*-------------------------------------------------------------------------------------------*/
+
+#ifndef MODULE
+#define MODULE                      WEMOS          // [Module] Select default model
+#endif
+#ifndef FALLBACK_MODULE
+#define FALLBACK_MODULE             WEMOS          // [Module2] Select default module on fast reboot where USER_MODULE is user template
+#endif
+
+#ifndef ARDUINO_ESP32_RELEASE
+#define ARDUINO_CORE_RELEASE        "STAGE"
+#else
+#define ARDUINO_CORE_RELEASE        ARDUINO_ESP32_RELEASE
+#endif  // ARDUINO_ESP32_RELEASE
+
+#undef FIRMWARE_MINIMAL                            // Minimal is not supported as not needed
+
+// Hardware has no ESP32
+#undef USE_TUYA_DIMMER
+#undef USE_PWM_DIMMER
+#undef USE_EXS_DIMMER
+#undef USE_ARMTRONIX_DIMMERS
+#undef USE_SONOFF_RF
+#undef USE_SONOFF_SC
+#undef USE_SONOFF_IFAN
+#undef USE_SONOFF_L1
+#undef USE_SONOFF_D1
+#undef USE_SHELLY_DIMMER
+#undef USE_RF_FLASH
+
+// Not ported (yet)
+
+#undef USE_MY92X1
+#undef USE_TUYA_MCU
+#undef USE_PS_16_DZ
+
+#undef USE_HM10                     // Disable support for HM-10 as a BLE-bridge as an alternative is using the internal ESP32 BLE
+#undef USE_KEELOQ                   // Disable support for Jarolift rollers by Keeloq algorithm as it's library cc1101 is not compatible with ESP32
+
+#endif  // ESP32
+
+/*********************************************************************************************\
+ * Fallback parameters
+\*********************************************************************************************/
+
+#ifdef USE_PID
+#define USE_TIMEPROP
+#endif
                                                // See https://github.com/esp8266/Arduino/pull/4889
 #undef NO_EXTRA_4K_HEAP                        // Allocate 4k heap for WPS in ESP8166/Arduino core v2.4.2 (was always allocated in previous versions)
 
 #ifndef USE_SONOFF_RF
 #undef USE_RF_FLASH                            // Disable RF firmware flash when Sonoff Rf is disabled
+#endif
+
+#ifndef USE_ZIGBEE
+#undef USE_ZIGBEE_EZSP                         // Disable Zigbee EZSP firmware flash
 #endif
 
 #ifndef USE_LIGHT
@@ -129,24 +213,38 @@ String EthernetMacAddress(void);
 #define WS2812_LEDS                 30         // [Pixels] Number of LEDs
 #endif
 
-//#ifdef USE_MQTT_TLS                            // Set to 4000 on 20200922 per #9305
-//  const uint16_t WEB_LOG_SIZE = 2000;          // Max number of characters in weblog
-//#else
-  const uint16_t WEB_LOG_SIZE = 4000;          // Max number of characters in weblog
-//#endif
-
 #if defined(ARDUINO_ESP8266_RELEASE_2_3_0) || defined(ARDUINO_ESP8266_RELEASE_2_4_0) || defined(ARDUINO_ESP8266_RELEASE_2_4_1) || defined(ARDUINO_ESP8266_RELEASE_2_4_2) || defined(ARDUINO_ESP8266_RELEASE_2_5_0) || defined(ARDUINO_ESP8266_RELEASE_2_5_1) || defined(ARDUINO_ESP8266_RELEASE_2_5_2)
   #error "Arduino ESP8266 Core versions before 2.7.1 are not supported"
 #endif
 
+#define UFS_FILE_WRITE              "w"
+#define UFS_FILE_READ               "r"
+#define FS_FILE_WRITE               "w"
+#define FS_FILE_READ                "r"
+#define FS_FILE_APPEND              "a"
+
+#define TASM_FILE_SETTINGS          "/.settings"       // Settings binary blob
+#define TASM_FILE_SETTINGS_LKG      "/.settings.lkg"   // Last Known Good Settings binary blob
+#define TASM_FILE_DRIVER            "/.drvset%03d"
+#define TASM_FILE_SENSOR            "/.snsset%03d"
+#define TASM_FILE_TLSKEY            "/tlskey"          // TLS private key
+#define TASM_FILE_ZIGBEE            "/zb"              // Zigbee devices information blob
+#define TASM_FILE_ZIGBEE_DATA       "/zbdata"          // Zigbee last known values of devices
+#define TASM_FILE_AUTOEXEC          "/autoexec.bat"    // Commands executed after restart
+#define TASM_FILE_CONFIG            "/config.sys"      // Settings executed after restart
+
 #ifndef MQTT_MAX_PACKET_SIZE
 #define MQTT_MAX_PACKET_SIZE        1200       // Bytes
+//#define MQTT_MAX_PACKET_SIZE        2048       // Bytes
 #endif
 #ifndef MQTT_KEEPALIVE
 #define MQTT_KEEPALIVE              30         // Seconds
 #endif
-#ifndef MQTT_TIMEOUT
-#define MQTT_TIMEOUT                10000      // milli seconds
+#ifndef MQTT_SOCKET_TIMEOUT
+#define MQTT_SOCKET_TIMEOUT         4          // Seconds
+#endif
+#ifndef MQTT_WIFI_CLIENT_TIMEOUT
+#define MQTT_WIFI_CLIENT_TIMEOUT    200        // Wifi TCP connection timeout (default is 5000 mSec)
 #endif
 #ifndef MQTT_CLEAN_SESSION
 #define MQTT_CLEAN_SESSION          1          // 0 = No clean session, 1 = Clean session (default)
@@ -159,8 +257,7 @@ String EthernetMacAddress(void);
 #endif
 
 #ifndef MESSZ
-//#define MESSZ                       1040     // Max number of characters in JSON message string (Hass discovery and nice MQTT_MAX_PACKET_SIZE = 1200)
-#define MESSZ                       (MQTT_MAX_PACKET_SIZE -TOPSZ -7)  // Max number of characters in JSON message string
+#define MESSZ                       1040       // Max number of characters in JSON message string (Hass discovery and nice MQTT_MAX_PACKET_SIZE = 1200)
 #endif
 
 #ifndef USE_DEVICE_GROUPS
@@ -247,6 +344,25 @@ String EthernetMacAddress(void);
 #define STARTING_OFFSET             30         // NOVA SDS parameter used in settings
 #endif
 
+#ifndef WIFI_RGX_STATE
+#define WIFI_RGX_STATE              0
+#endif
+#ifndef WIFI_RGX_NAPT
+#define WIFI_RGX_NAPT               0
+#endif
+#ifndef WIFI_RGX_SSID
+#define WIFI_RGX_SSID               ""
+#endif
+#ifndef WIFI_RGX_PASSWORD
+#define WIFI_RGX_PASSWORD           ""
+#endif
+#ifndef WIFI_RGX_IP_ADDRESS
+#define WIFI_RGX_IP_ADDRESS         "192.168.99.1"
+#endif
+#ifndef WIFI_RGX_SUBNETMASK
+#define WIFI_RGX_SUBNETMASK         "255.255.255.0"
+#endif
+
 /*********************************************************************************************\
  * UserConfig related parameters
 \*********************************************************************************************/
@@ -325,59 +441,6 @@ const char kWebColors[] PROGMEM =
   COLOR_TIMER_TAB_TEXT "|" COLOR_TIMER_TAB_BACKGROUND "|" COLOR_TITLE_TEXT;
 
 /*********************************************************************************************\
- * ESP8266 specific parameters
-\*********************************************************************************************/
-
-#ifdef ESP8266
-
-#ifndef MODULE
-#define MODULE                      SONOFF_BASIC   // [Module] Select default model
-#endif
-#ifndef FALLBACK_MODULE
-#define FALLBACK_MODULE             SONOFF_BASIC   // [Module2] Select default module on fast reboot where USER_MODULE is user template
-#endif
-
-#ifndef ARDUINO_ESP8266_RELEASE
-#define ARDUINO_CORE_RELEASE        "STAGE"
-#else
-#define ARDUINO_CORE_RELEASE        ARDUINO_ESP8266_RELEASE
-#endif  // ARDUINO_ESP8266_RELEASE
-
-#ifndef USE_ADC_VCC
-#define USE_ADC
-#else
-#undef USE_ADC
-#endif
-
-#endif  // ESP8266
-
-/*********************************************************************************************\
- * ESP32 specific parameters
-\*********************************************************************************************/
-
-#ifdef ESP32
-
-#ifndef MODULE
-#define MODULE                      WEMOS          // [Module] Select default model
-#endif
-#ifndef FALLBACK_MODULE
-#define FALLBACK_MODULE             WEMOS          // [Module2] Select default module on fast reboot where USER_MODULE is user template
-#endif
-
-#ifndef ARDUINO_ESP32_RELEASE
-#define ARDUINO_CORE_RELEASE        "STAGE"
-#else
-#define ARDUINO_CORE_RELEASE        ARDUINO_ESP32_RELEASE
-#endif  // ARDUINO_ESP32_RELEASE
-
-#undef USE_HM10                     // Disable support for HM-10 as a BLE-bridge as an alternative is using the internal ESP32 BLE
-#undef USE_KEELOQ                   // Disable support for Jarolift rollers by Keeloq algorithm as it's library cc1101 is not compatible with ESP32
-//#undef USE_DISPLAY_ILI9488          // Disable as it's library JaretBurkett_ILI9488-gemu-1.0 is not compatible with ESP32
-//#undef USE_DISPLAY_SSD1351          // Disable as it's library Adafruit_SSD1351_gemu-1.0 is not compatible with ESP32
-
-#endif  // ESP32
-
-/*********************************************************************************************\
  * Macros
 \*********************************************************************************************/
 
@@ -389,13 +452,11 @@ const char kWebColors[] PROGMEM =
 #define tmin(a,b) ((a)<(b)?(a):(b))
 #define tmax(a,b) ((a)>(b)?(a):(b))
 
+#define nitems(_a) (sizeof((_a)) / sizeof((_a)[0]))
+
 #define STR_HELPER(x) #x
 #ifndef STR
 #define STR(x) STR_HELPER(x)
-#endif
-
-#ifndef ARRAY_SIZE
-#define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
 #endif
 
 #define AGPIO(x) ((x)<<5)
@@ -403,31 +464,72 @@ const char kWebColors[] PROGMEM =
 
 #ifdef USE_DEVICE_GROUPS
 #define SendDeviceGroupMessage(DEVICE_INDEX, REQUEST_TYPE, ...) _SendDeviceGroupMessage(DEVICE_INDEX, REQUEST_TYPE, __VA_ARGS__, 0)
-#define SendLocalDeviceGroupMessage(REQUEST_TYPE, ...) _SendDeviceGroupMessage(0, REQUEST_TYPE, __VA_ARGS__, 0)
 uint8_t device_group_count = 0;
 bool first_device_group_is_local = true;
 #endif  // USE_DEVICE_GROUPS
 
 #ifdef DEBUG_TASMOTA_CORE
-#define DEBUG_CORE_LOG(...) AddLog_Debug(__VA_ARGS__)
+#define DEBUG_CORE_LOG(...) AddLog(LOG_LEVEL_DEBUG, __VA_ARGS__)
 #else
 #define DEBUG_CORE_LOG(...)
 #endif
 #ifdef DEBUG_TASMOTA_DRIVER
-#define DEBUG_DRIVER_LOG(...) AddLog_Debug(__VA_ARGS__)
+#define DEBUG_DRIVER_LOG(...) AddLog(LOG_LEVEL_DEBUG, __VA_ARGS__)
 #else
 #define DEBUG_DRIVER_LOG(...)
 #endif
 #ifdef DEBUG_TASMOTA_SENSOR
-#define DEBUG_SENSOR_LOG(...) AddLog_Debug(__VA_ARGS__)
+#define DEBUG_SENSOR_LOG(...) AddLog(LOG_LEVEL_DEBUG, __VA_ARGS__)
 #else
 #define DEBUG_SENSOR_LOG(...)
 #endif
 #ifdef DEBUG_TASMOTA_TRACE
-#define DEBUG_TRACE_LOG(...) AddLog_Debug(__VA_ARGS__)
+#define DEBUG_TRACE_LOG(...) AddLog(LOG_LEVEL_DEBUG, __VA_ARGS__)
 #else
 #define DEBUG_TRACE_LOG(...)
 #endif
+
+#ifdef USE_DEBUG_DRIVER
+#define SHOW_FREE_MEM(WHERE) ShowFreeMem(WHERE);
+#else
+#define SHOW_FREE_MEM(WHERE)
+#endif
+
+/*********************************************************************************************\
+ * Macro for SetOption synonyms
+ *
+ * SetOption synonyms come first in the list of commands, right after the prefix.
+ * They don't need any matching function pointer, since they are handled internally.
+ * So don't forget to NOT put pointers in the functions pointers list.
+ *
+ * The additionnal list of unsigned bytes contains the Option numbers of each synonyms
+ * in the same order. The first byte of the list contains the number of synonyms
+ * (not including the number itself). The is the number of names to skip to find the first command.
+ *
+ * As it si cumbersome to calculate the first byte (number of synonyms), we provide the following
+ * macro `SO_SYNONYMS(<name>, <list of bytes>)`
+ *
+ * For example:
+ * ```
+ *   SO_SYNONYMS(kLightSynonyms,
+ *     37, 68, 82, 91, 92, 105,
+ *     106,
+ *   );
+ * ```
+ *
+ * is equivalent to:
+ * ```
+ *   const static uint8_t kLightSynonyms[] PROGMEM = {
+ *     7,   // number of synonyms, automatically calculated
+ *     37, 68, 82, 91, 92, 105,
+ *     106,
+ *   };
+ * ```
+ *
+ * This comes very handy if you need to adjust the number of synonyms depending on #defines
+\*********************************************************************************************/
+
+#define SO_SYNONYMS(N,...) const static uint8_t __syn_array_len_ ## N[] = { __VA_ARGS__ }; /* this first array will not be kept by linker, just used for sizeof() */ const static uint8_t N[] PROGMEM = { sizeof(__syn_array_len_ ## N), __VA_ARGS__ };
 
 /*********************************************************************************************/
 

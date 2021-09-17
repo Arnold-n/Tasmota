@@ -1,7 +1,7 @@
 /*
   xdrv_40_telegram.ino - telegram for Tasmota
 
-  Copyright (C) 2020  Theo Arends
+  Copyright (C) 2021  Theo Arends
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -62,11 +62,11 @@ static const uint8_t Telegram_Fingerprint[] PROGMEM = USE_TELEGRAM_FINGERPRINT;
 
 typedef struct {
   String text;
+  String chat_id;
 //  String from_first_name;
 //  String from_last_name;
 //  uint32_t from_id = 0;
   uint32_t update_id = 0;
-  int32_t chat_id = 0;
 } TelegramMessage;
 
 struct {
@@ -78,9 +78,6 @@ struct {
   uint8_t retry = 0;
   uint8_t poll = TELEGRAM_LOOP_WAIT;
   uint8_t wait = 0;
-  bool send_enable = false;
-  bool recv_enable = false;
-  bool echo_enable = false;
   bool recv_busy = false;
   bool skip = true;           // Skip first telegram if restarted
 } Telegram;
@@ -99,41 +96,61 @@ bool TelegramInit(void) {
       Telegram.next_update_id = 0;    // Code of last read Message
       Telegram.message[0].text = "";
 
-      AddLog_P(LOG_LEVEL_INFO, PSTR("TGM: Started"));
+      AddLog(LOG_LEVEL_INFO, PSTR("TGM: Started"));
     }
     init_done = true;
   }
   return init_done;
 }
 
-String TelegramConnectToTelegram(String command) {
-//  AddLog_P(LOG_LEVEL_DEBUG, PSTR("TGM: Cmnd %s"), command.c_str());
+String TelegramConnectToTelegram(const String &command) {
+//  AddLog(LOG_LEVEL_DEBUG_MORE, PSTR("TGM: Cmnd '%s'"), command.c_str());
 
   if (!TelegramInit()) { return ""; }
 
+  String host = F("api.telegram.org");
   String response = "";
   uint32_t tls_connect_time = millis();
-  if (telegramClient->connect("api.telegram.org", 443)) {
+  if (telegramClient->connect(host.c_str(), 443)) {
 
-//    AddLog_P(LOG_LEVEL_DEBUG, PSTR("TGM: Connected in %d ms, max ThunkStack used %d"), millis() - tls_connect_time, telegramClient->getMaxThunkStackUse());
+//    AddLog(LOG_LEVEL_DEBUG, PSTR("TGM: Connected in %d ms, max ThunkStack used %d"), millis() - tls_connect_time, telegramClient->getMaxThunkStackUse());
 
-    telegramClient->println("GET /"+command);
+//    telegramClient->println("GET /"+command);  // Fails after 20210621
+    String request = "GET /" + command + " HTTP/1.1\r\nHost: " + host + "\r\nConnection: close\r\n\r\n";
+    telegramClient->print(request);
+/*
+    Response before 20210621:
+    {"ok":true,"result":[]}
 
+    Response after 20210621:
+    HTTP/1.1 200 OK
+    Server: nginx/1.18.0
+    Date: Thu, 24 Jun 2021 15:26:20 GMT
+    Content-Type: application/json
+    Content-Length: 23
+    Connection: close
+    Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
+    Access-Control-Allow-Origin: *
+    Access-Control-Allow-Methods: GET, POST, OPTIONS
+    Access-Control-Expose-Headers: Content-Length,Content-Type,Date,Server,Connection
+
+    {"ok":true,"result":[]}
+*/
     char c;
-    int ch_count=0;
+    bool available = false;
     uint32_t now = millis();
-    bool avail = false;
-    while (millis() -now < 1500) {
+    while (!available && (millis() -now < 1500)) {
       while (telegramClient->available()) {
-        char c = telegramClient->read();
-        if (ch_count < 700) {  // Allow up to two messages
-          response = response + c;
-          ch_count++;
+        c = telegramClient->read();
+        if (c == '{') {
+          available = true;               // Skip headers (+-400 bytes) and start response at first JSON
         }
-        avail = true;
-      }
-      if (avail) {
-        break;
+        if (available) {
+          response += c;
+          if (response.length() > 800) {  // Allow up to two messages
+            break;
+          }
+        }
       }
     }
 
@@ -144,7 +161,7 @@ String TelegramConnectToTelegram(String command) {
 }
 
 void TelegramGetUpdates(uint32_t offset) {
-  AddLog_P(LOG_LEVEL_DEBUG_MORE, PSTR("TGM: getUpdates"));
+  AddLog(LOG_LEVEL_DEBUG_MORE, PSTR("TGM: getUpdates"));
 
   if (!TelegramInit()) { return; }
 
@@ -204,13 +221,13 @@ void TelegramGetUpdates(uint32_t offset) {
   //  }
   // ]}
 
-  AddLog_P(LOG_LEVEL_DEBUG_MORE, PSTR("TGM: Response %s"), response.c_str());
+  AddLog(LOG_LEVEL_DEBUG_MORE, PSTR("TGM: Response '%s'"), response.c_str());
 
   JsonParser parser((char*)response.c_str());
   JsonParserObject root = parser.getRootObject();
   if (root) {
 
-//    AddLog_P(LOG_LEVEL_DEBUG, PSTR("TGM: Sent Update request messages up to %s"), offset.c_str());
+//    AddLog(LOG_LEVEL_DEBUG, PSTR("TGM: Sent Update request messages up to %s"), offset.c_str());
 
     JsonParserArray arr = root[PSTR("result")];
     uint32_t max_updates = arr.size();
@@ -233,36 +250,36 @@ void TelegramGetUpdates(uint32_t offset) {
 //          Telegram.message[i].from_id = result["message"].getObject()["from"].getObject()["id"].getUInt();
 //          Telegram.message[i].from_first_name = result["message"].getObject()["from"].getObject()["first_name"].getStr();
 //          Telegram.message[i].from_last_name = result["message"].getObject()["from"].getObject()["last_name"].getStr();
-          Telegram.message[i].chat_id = result["message"].getObject()["chat"].getObject()["id"].getUInt();
+          Telegram.message[i].chat_id = result["message"].getObject()["chat"].getObject()["id"].getStr();
           Telegram.message[i].text = result["message"].getObject()["text"].getStr();
         }
         Telegram.next_update_id = Telegram.message[i].update_id +1;  // Write id of last read message
 
-        AddLog_P(LOG_LEVEL_DEBUG_MORE, PSTR("TGM: Parsed update_id %d, chat_id %d, text \"%s\""), Telegram.message[i].update_id, Telegram.message[i].chat_id, Telegram.message[i].text.c_str());
+        AddLog(LOG_LEVEL_DEBUG_MORE, PSTR("TGM: Parsed update_id %d, chat_id %s, text \"%s\""), Telegram.message[i].update_id, Telegram.message[i].chat_id.c_str(), Telegram.message[i].text.c_str());
       }
     } else {
-//      AddLog_P(LOG_LEVEL_DEBUG, PSTR("TGM: No new messages"));
+//      AddLog(LOG_LEVEL_DEBUG, PSTR("TGM: No new messages"));
     }
   } else {
-//    AddLog_P(LOG_LEVEL_DEBUG, PSTR("TGM: Failed to update"));
+//    AddLog(LOG_LEVEL_DEBUG, PSTR("TGM: Failed to update"));
   }
 }
 
-bool TelegramSendMessage(int32_t chat_id, String text) {
-  AddLog_P(LOG_LEVEL_DEBUG_MORE, PSTR("TGM: sendMessage"));
+bool TelegramSendMessage(const String &chat_id, const String &text) {
+  AddLog(LOG_LEVEL_DEBUG_MORE, PSTR("TGM: sendMessage"));
 
   if (!TelegramInit()) { return false; }
 
   bool sent = false;
   if (text != "") {
     String _token = SettingsText(SET_TELEGRAM_TOKEN);
-    String command = "bot" + _token + "/sendMessage?chat_id=" + String(chat_id) + "&text=" + text;
+    String command = "bot" + _token + "/sendMessage?chat_id=" + chat_id + "&text=" + UrlEncode(text);
     String response = TelegramConnectToTelegram(command);
 
-//    AddLog_P(LOG_LEVEL_DEBUG_MORE, PSTR("TGM: Response %s"), response.c_str());
+//    AddLog(LOG_LEVEL_DEBUG_MORE, PSTR("TGM: Response %s"), response.c_str());
 
     if (response.startsWith("{\"ok\":true")) {
-//      AddLog_P(LOG_LEVEL_DEBUG, PSTR("TGM: Message sent"));
+//      AddLog(LOG_LEVEL_DEBUG, PSTR("TGM: Message sent"));
       sent = true;
     }
   }
@@ -272,7 +289,7 @@ bool TelegramSendMessage(int32_t chat_id, String text) {
 
 /*
 void TelegramSendGetMe(void) {
-  AddLog_P(LOG_LEVEL_DEBUG_MORE, PSTR("TGM: getMe"));
+  AddLog(LOG_LEVEL_DEBUG_MORE, PSTR("TGM: getMe"));
 
   if (!TelegramInit()) { return; }
 
@@ -282,50 +299,46 @@ void TelegramSendGetMe(void) {
 
   // {"ok":true,"result":{"id":1179906608,"is_bot":true,"first_name":"Tasmota","username":"tasmota_bot","can_join_groups":true,"can_read_all_group_messages":false,"supports_inline_queries":false}}
 
-//  AddLog_P(LOG_LEVEL_DEBUG_MORE, PSTR("TGM: Response %s"), response.c_str());
+//  AddLog(LOG_LEVEL_DEBUG_MORE, PSTR("TGM: Response %s"), response.c_str());
 }
 */
 
 String TelegramExecuteCommand(const char *svalue) {
   String response = "";
 
-  uint32_t curridx = TasmotaGlobal.web_log_index;
+  uint32_t curridx = TasmotaGlobal.log_buffer_pointer;
+  TasmotaGlobal.templog_level = LOG_LEVEL_INFO;
   ExecuteCommand(svalue, SRC_CHAT);
-  if (TasmotaGlobal.web_log_index != curridx) {
-    uint32_t counter = curridx;
-    response = F("{");
-    bool cflg = false;
-    do {
-      char* tmp;
-      size_t len;
-      GetLog(counter, &tmp, &len);
-      if (len) {
-        // [14:49:36 MQTT: stat/wemos5/RESULT = {"POWER":"OFF"}] > [{"POWER":"OFF"}]
-        char* JSON = (char*)memchr(tmp, '{', len);
-        if (JSON) { // Is it a JSON message (and not only [15:26:08 MQT: stat/wemos5/POWER = O])
-          size_t JSONlen = len - (JSON - tmp);
-          if (JSONlen > sizeof(TasmotaGlobal.mqtt_data)) { JSONlen = sizeof(TasmotaGlobal.mqtt_data); }
-          char stemp[JSONlen];
-          strlcpy(stemp, JSON +1, JSONlen -2);
-          if (cflg) { response += F(","); }
-          response += stemp;
-          cflg = true;
-        }
-      }
-      counter++;
-      counter &= 0xFF;
-      if (!counter) counter++;  // Skip 0 as it is not allowed
-    } while (counter != TasmotaGlobal.web_log_index);
-    response += F("}");
-  } else {
-    response = F("{\"" D_RSLT_WARNING "\":\"" D_ENABLE_WEBLOG_FOR_RESPONSE "\"}");
+  response = F("{");
+  bool cflg = false;
+  uint32_t index = curridx;
+  char* line;
+  size_t len;
+  while (GetLog(TasmotaGlobal.templog_level, &index, &line, &len)) {
+    // [14:49:36.123 MQTT: stat/wemos5/RESULT = {"POWER":"OFF"}] > [{"POWER":"OFF"}]
+    char* JSON = (char*)memchr(line, '{', len);
+    if (JSON) {  // Is it a JSON message (and not only [15:26:08 MQT: stat/wemos5/POWER = O])
+      if (cflg) { response += F(","); }  // Add a comma
+
+//      size_t JSONlen = len - (JSON - line);
+//      response.concat(JSON +1, JSONlen -3);  // Add terminating '\0' - Not supported on ESP32
+      len -= 2;                          // Skip last '}'
+      char save_log_char = line[len];
+      line[len] = '\0';                  // Add terminating \'0'
+      response.concat(JSON +1);          // Skip first '{'
+      line[len] = save_log_char;
+
+      cflg = true;
+    }
   }
+  response += F("}");
+  TasmotaGlobal.templog_level = 0;
 
   return response;
 }
 
 void TelegramLoop(void) {
-  if (!TasmotaGlobal.global_state.network_down && (Telegram.recv_enable || Telegram.echo_enable)) {
+  if (!TasmotaGlobal.global_state.network_down && (Settings->sbflag1.telegram_recv_enable || Settings->sbflag1.telegram_echo_enable)) {
     switch (Telegram.state) {
       case 0:
         TelegramInit();
@@ -338,7 +351,7 @@ void TelegramLoop(void) {
         Telegram.state++;
         break;
       case 2:
-        if (Telegram.echo_enable) {
+        if (Settings->sbflag1.telegram_echo_enable) {
           if (Telegram.retry && (Telegram.index < Telegram.message_count)) {
             if (TelegramSendMessage(Telegram.message[Telegram.index].chat_id, Telegram.message[Telegram.index].text)) {
               Telegram.index++;
@@ -399,21 +412,24 @@ void CmndTmState(void) {
       switch (XdrvMailbox.payload) {
       case 0: // Off
       case 1: // On
-        Telegram.send_enable = XdrvMailbox.payload &1;
+        Settings->sbflag1.telegram_send_enable = XdrvMailbox.payload &1;
         break;
       case 2: // Off
       case 3: // On
-        Telegram.recv_enable = XdrvMailbox.payload &1;
+        Settings->sbflag1.telegram_recv_enable = XdrvMailbox.payload &1;
         break;
       case 4: // Off
       case 5: // On
-        Telegram.echo_enable = XdrvMailbox.payload &1;
+        Settings->sbflag1.telegram_echo_enable = XdrvMailbox.payload &1;
         break;
       }
     }
   }
-  snprintf_P (TasmotaGlobal.mqtt_data, sizeof(TasmotaGlobal.mqtt_data), PSTR("{\"%s\":{\"Send\":\"%s\",\"Receive\":\"%s\",\"Echo\":\"%s\"}}"),
-    XdrvMailbox.command, GetStateText(Telegram.send_enable), GetStateText(Telegram.recv_enable), GetStateText(Telegram.echo_enable));
+  Response_P(PSTR("{\"%s\":{\"Send\":\"%s\",\"Receive\":\"%s\",\"Echo\":\"%s\"}}"),
+    XdrvMailbox.command,
+    GetStateText(Settings->sbflag1.telegram_send_enable),
+    GetStateText(Settings->sbflag1.telegram_recv_enable),
+    GetStateText(Settings->sbflag1.telegram_echo_enable));
 }
 
 void CmndTmPoll(void) {
@@ -441,15 +457,15 @@ void CmndTmChatId(void) {
 }
 
 void CmndTmSend(void) {
-  if (!Telegram.send_enable || !strlen(SettingsText(SET_TELEGRAM_CHATID))) {
-    ResponseCmndChar(D_JSON_FAILED);
+  if (!Settings->sbflag1.telegram_send_enable || !strlen(SettingsText(SET_TELEGRAM_CHATID))) {
+    ResponseCmndFailed();
     return;
   }
   if (XdrvMailbox.data_len > 0) {
     String message = XdrvMailbox.data;
     String chat_id = SettingsText(SET_TELEGRAM_CHATID);
-    if (!TelegramSendMessage(chat_id.toInt(), message)) {
-      ResponseCmndChar(D_JSON_FAILED);
+    if (!TelegramSendMessage(chat_id, message)) {
+      ResponseCmndFailed();
       return;
     }
   }

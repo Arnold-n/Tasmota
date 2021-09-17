@@ -1,7 +1,7 @@
 /*
   xdsp_11_sevenseg.ino - Display seven segment support for Tasmota
 
-  Copyright (C) 2020  Theo Arends and Adafruit
+  Copyright (C) 2021  Theo Arends and Adafruit
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -34,10 +34,86 @@ uint8_t sevenseg_state = 0;
 
 /*********************************************************************************************/
 
+#ifdef USE_DISPLAY_SEVENSEG_COMMON_ANODE
+void bufferStuffer(uint32_t i) {
+  uint8_t outArray[8] = {0,0,0,0,0,0,0,0};
+  uint8_t v;
+
+  for (int j = 0; j < 8; j++) {
+    for (int k = 0; k < 8; k++) {
+      v = ((sevenseg[i]->displaybuffer[j] >> k) & 1);
+      outArray[k] |= (v << j);
+    }
+  }
+
+  for (int j = 0; j < 8; j++) {
+    sevenseg[i]->displaybuffer[j] = outArray[j];
+  }
+}
+#endif
+
 void SevensegWrite(void)
 {
   for (uint32_t i = 0; i < sevensegs; i++) {
+#ifdef USE_DISPLAY_SEVENSEG_COMMON_ANODE
+    bufferStuffer(i);
+#endif
     sevenseg[i]->writeDisplay();
+  }
+}
+
+void SevensegLog(void)
+{
+  // get sensor data
+  ResponseClear();
+  ResponseAppendTime();
+  XsnsCall(FUNC_JSON_APPEND);
+  ResponseJsonEnd();
+
+  // display nth sensor value on nth display
+  // code adapted from xdrv_13_display.ino, DisplayAnalyzeJson()
+  uint8_t unit = 0;
+  int16_t valueDecimal = 0;
+  double valueFloat = 0;
+  uint8 fDigits = 0;
+  String jsonStr = ResponseData();  // Move from stack to heap to fix watchdogs (20180626)
+  JsonParser parser((char*)jsonStr.c_str());
+  JsonParserObject object_root = parser.getRootObject();
+  if (object_root) {
+    for (auto key_level1 : object_root) {
+      JsonParserToken token_level1 = key_level1.getValue();
+      if (token_level1.isObject()) {
+        JsonParserObject object_level1 = token_level1.getObject();
+        for (auto key_level2 : object_level1) {
+          const char* value_level2 = key_level2.getValue().getStr(nullptr);
+          if (value_level2 != nullptr) {
+            if ((unit < sevensegs) && (sevenseg[unit] != nullptr)) {
+              if (strchr( value_level2, '.') == NULL) {
+                sevenseg[unit]->print(atoi(value_level2), DEC);
+              } else {
+                sevenseg[unit]->printFloat(atof(value_level2), 1, DEC);
+              }
+              sevenseg[unit]->writeDisplay();
+              unit++;
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+void SevensegDim(void)
+{
+  for (uint32_t i = 0; i < sevensegs; i++) {
+    sevenseg[i]->setBrightness(GetDisplayDimmer16());
+  }
+}
+
+void SevensegBlinkrate( void)
+{
+  for (uint32_t i = 0; i < sevensegs; i++) {
+    sevenseg[i]->blinkRate(XdrvMailbox.payload);
   }
 }
 
@@ -49,13 +125,12 @@ void SevensegClear(void)
   SevensegWrite();
 }
 
-
 /*********************************************************************************************/
 
 void SevensegInitMode(void)
 {
   for (uint32_t i = 0; i < sevensegs; i++) {
-    sevenseg[i]->setBrightness(Settings.display_dimmer);
+    sevenseg[i]->setBrightness(GetDisplayDimmer16());
     sevenseg[i]->blinkRate(0);
   }
   SevensegClear();
@@ -72,28 +147,29 @@ void SevensegInit(uint8_t mode)
   }
 }
 
-void SevensegInitDriver(void)
-{
-  if (!Settings.display_model) {
-    if (I2cSetDevice(Settings.display_address[0])) {
-      Settings.display_model = XDSP_11;
+void SevensegInitDriver(void) {
+  if (!TasmotaGlobal.i2c_enabled) { return; }
+
+  if (!Settings->display_model) {
+    if (I2cSetDevice(Settings->display_address[0])) {
+      Settings->display_model = XDSP_11;
     }
   }
 
-  if (XDSP_11 == Settings.display_model) {
+  if (XDSP_11 == Settings->display_model) {
     sevenseg_state = 1;
     for (sevensegs = 0; sevensegs < 8; sevensegs++) {
-        if (Settings.display_address[sevensegs]) {
-          I2cSetActiveFound(Settings.display_address[sevensegs], "SevenSeg");
+        if (Settings->display_address[sevensegs]) {
+          I2cSetActiveFound(Settings->display_address[sevensegs], "SevenSeg");
           sevenseg[sevensegs] = new Adafruit_7segment();
-          sevenseg[sevensegs]->begin(Settings.display_address[sevensegs]);
+          sevenseg[sevensegs]->begin(Settings->display_address[sevensegs]);
         } else {
             break;
         }
     }
 
-    Settings.display_width = 4;
-    Settings.display_height = sevensegs;
+    Settings->display_width = 4;
+    Settings->display_height = sevensegs;
 
     SevensegInitMode();
   }
@@ -254,6 +330,9 @@ void SevensegDrawStringAt(uint16_t x, uint16_t y, char *str, uint16_t color, uin
     sevenseg[unit]->writeDigitRaw(2, dots);
   }
 
+#ifdef USE_DISPLAY_SEVENSEG_COMMON_ANODE
+  bufferStuffer(unit);
+#endif
   sevenseg[unit]->writeDisplay();
 }
 
@@ -309,14 +388,17 @@ void SevensegTime(boolean time_24)
   }
 
   sevenseg[0]->writeDigitRaw(2, dots |= ((second%2) << 1));
+#ifdef USE_DISPLAY_SEVENSEG_COMMON_ANODE
+  bufferStuffer(0);
+#endif
   sevenseg[0]->writeDisplay();
 }
 
 void SevensegRefresh(void)  // Every second
 {
   if (disp_power) {
-    if (Settings.display_mode) {  // Mode 0 is User text
-      switch (Settings.display_mode) {
+    if (Settings->display_mode) {  // Mode 0 is User text
+      switch (Settings->display_mode) {
         case 1:  // Time 12
           SevensegTime(false);
           break;
@@ -326,6 +408,7 @@ void SevensegRefresh(void)  // Every second
         case 4:  // Mqtt
         case 3:  // Local
         case 5: {  // Mqtt
+          SevensegLog();
           break;
         }
       }
@@ -348,7 +431,7 @@ bool Xdsp11(uint8_t function)
   if (FUNC_DISPLAY_INIT_DRIVER == function) {
     SevensegInitDriver();
   }
-  else if (XDSP_11 == Settings.display_model) {
+  else if (XDSP_11 == Settings->display_model) {
     switch (function) {
       case FUNC_DISPLAY_MODEL:
         result = true;
@@ -370,6 +453,13 @@ bool Xdsp11(uint8_t function)
       case FUNC_DISPLAY_DRAW_STRING:
         SevensegDrawStringAt(dsp_x, dsp_y, dsp_str, dsp_color, dsp_flag);
         break;
+      case FUNC_DISPLAY_DIM:
+        SevensegDim();
+	break;
+      case FUNC_DISPLAY_BLINKRATE:
+        SevensegBlinkrate();
+	break;
+
     }
   }
   return result;

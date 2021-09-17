@@ -1,7 +1,7 @@
 /*
   xnrg_06_pzem_dc.ino - PZEM-003,017 Modbus DC energy sensor support for Tasmota
 
-  Copyright (C) 2020  Theo Arends
+  Copyright (C) 2021  Theo Arends
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -62,7 +62,7 @@ void PzemDcEverySecond(void)
     AddLogBuffer(LOG_LEVEL_DEBUG_MORE, buffer, PzemDcModbus->ReceiveCount());
 
     if (error) {
-      AddLog_P(LOG_LEVEL_DEBUG, PSTR("PDC: PzemDc %d error %d"), PZEM_DC_DEVICE_ADDRESS + PzemDc.channel, error);
+      AddLog(LOG_LEVEL_DEBUG, PSTR("PDC: PzemDc %d error %d"), PZEM_DC_DEVICE_ADDRESS + PzemDc.channel, error);
     } else {
       Energy.data_valid[PzemDc.channel] = 0;
       if (8 == registers) {
@@ -107,6 +107,9 @@ void PzemDcEverySecond(void)
     PzemDc.send_retry--;
     if ((Energy.phase_count > 1) && (0 == PzemDc.send_retry) && (TasmotaGlobal.uptime < PZEM_DC_STABILIZE)) {
       Energy.phase_count--;  // Decrement channels if no response after retry within 30 seconds after restart
+      if (TasmotaGlobal.discovery_counter) {
+        TasmotaGlobal.discovery_counter += ENERGY_WATCHDOG + 1;  // Don't send Discovery yet, delay by 4s + 1s
+      }
     }
   }
 }
@@ -118,7 +121,7 @@ void PzemDcSnsInit(void)
   if (result) {
     if (2 == result) { ClaimSerial(); }
     Energy.type_dc = true;
-    Energy.phase_count = 3;  // Start off with three channels
+    Energy.phase_count = ENERGY_MAX_PHASES;  // Start off with three channels
     PzemDc.channel = 0;
   } else {
     TasmotaGlobal.energy_driver = ENERGY_NONE;

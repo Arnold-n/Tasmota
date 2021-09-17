@@ -1,7 +1,7 @@
 /*
   xdrv_36_keeloq.ino - Jarolift Keeloq shutter support for Tasmota
 
-  Copyright (C) 2020  he-so
+  Copyright (C) 2021  he-so
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -54,8 +54,8 @@ struct JAROLIFT_DEVICE {
   uint64_t pack            = 0;   // Contains data to send.
   int count                = 0;
   uint32_t serial          = 0x0;
-  uint8_t port_tx;
-  uint8_t port_rx;
+  int8_t port_tx;
+  int8_t port_rx;
 } jaroliftDevice;
 
 void CmdSet(void)
@@ -73,10 +73,10 @@ void CmdSet(void)
         if (param[i] < 1) { param[i] = 1; }  // msb, lsb, serial, counter
       }
       DEBUG_DRIVER_LOG(LOG_LEVEL_DEBUG_MORE, PSTR("params: %08x %08x %08x %08x"), param[0], param[1], param[2], param[3]);
-      Settings.keeloq_master_msb = param[0];
-      Settings.keeloq_master_lsb = param[1];
-      Settings.keeloq_serial = param[2];
-      Settings.keeloq_count = param[3];
+      Settings->keeloq_master_msb = param[0];
+      Settings->keeloq_master_lsb = param[1];
+      Settings->keeloq_serial = param[2];
+      Settings->keeloq_count = param[3];
 
       jaroliftDevice.serial = param[2];
       jaroliftDevice.count = param[3];
@@ -93,11 +93,11 @@ void CmdSet(void)
 
 void GenerateDeviceCryptKey()
 {
-  Keeloq k(Settings.keeloq_master_msb, Settings.keeloq_master_lsb);
+  Keeloq k(Settings->keeloq_master_msb, Settings->keeloq_master_lsb);
   jaroliftDevice.device_key_msb = k.decrypt(jaroliftDevice.serial | 0x60000000L);
   jaroliftDevice.device_key_lsb = k.decrypt(jaroliftDevice.serial | 0x20000000L);
 
-  AddLog_P(LOG_LEVEL_DEBUG, PSTR("generated device keys: %08x %08x"), jaroliftDevice.device_key_msb, jaroliftDevice.device_key_lsb);
+  AddLog(LOG_LEVEL_DEBUG, PSTR("generated device keys: %08x %08x"), jaroliftDevice.device_key_msb, jaroliftDevice.device_key_lsb);
 }
 
 void CmdSendButton(void)
@@ -114,11 +114,11 @@ void CmdSendButton(void)
       DEBUG_DRIVER_LOG(LOG_LEVEL_DEBUG_MORE, PSTR("lsb: %08x"), jaroliftDevice.device_key_lsb);
       DEBUG_DRIVER_LOG(LOG_LEVEL_DEBUG_MORE, PSTR("serial: %08x"), jaroliftDevice.serial);
       DEBUG_DRIVER_LOG(LOG_LEVEL_DEBUG_MORE, PSTR("disc: %08x"), jaroliftDevice.disc);
-      AddLog_P(LOG_LEVEL_DEBUG, PSTR("KLQ: count: %08x"), jaroliftDevice.count);
+      AddLog(LOG_LEVEL_DEBUG, PSTR("KLQ: count: %08x"), jaroliftDevice.count);
 
       CreateKeeloqPacket();
       jaroliftDevice.count++;
-      Settings.keeloq_count = jaroliftDevice.count;
+      Settings->keeloq_count = jaroliftDevice.count;
 
       for(int repeat = 0; repeat <= 1; repeat++)
       {
@@ -236,8 +236,8 @@ void CreateKeeloqPacket()
   jaroliftDevice.enc = k.encrypt(result);
   jaroliftDevice.pack |= jaroliftDevice.enc;
 
-  AddLog_P(LOG_LEVEL_DEBUG_MORE, PSTR("pack high: %08x"), jaroliftDevice.pack>>32);
-  AddLog_P(LOG_LEVEL_DEBUG_MORE, PSTR("pack low:  %08x"), jaroliftDevice.pack);
+  AddLog(LOG_LEVEL_DEBUG_MORE, PSTR("pack high: %08x"), jaroliftDevice.pack>>32);
+  AddLog(LOG_LEVEL_DEBUG_MORE, PSTR("pack low:  %08x"), jaroliftDevice.pack);
 }
 
 void KeeloqInit()
@@ -248,7 +248,7 @@ void KeeloqInit()
   DEBUG_DRIVER_LOG(LOG_LEVEL_DEBUG_MORE, PSTR("cc1101.init()"));
   delay(100);
   cc1101.init();
-  AddLog_P(LOG_LEVEL_DEBUG_MORE, PSTR("CC1101 done."));
+  AddLog(LOG_LEVEL_DEBUG_MORE, PSTR("CC1101 done."));
   cc1101.setSyncWord(SYNC_WORD, false);
   cc1101.setCarrierFreq(CFREQ_433);
   cc1101.disableAddressCheck();
@@ -256,8 +256,8 @@ void KeeloqInit()
   pinMode(jaroliftDevice.port_tx, OUTPUT);
   pinMode(jaroliftDevice.port_rx, INPUT_PULLUP);
 
-  jaroliftDevice.serial = Settings.keeloq_serial;
-  jaroliftDevice.count = Settings.keeloq_count;
+  jaroliftDevice.serial = Settings->keeloq_serial;
+  jaroliftDevice.count = Settings->keeloq_count;
   GenerateDeviceCryptKey();
 }
 
@@ -272,7 +272,7 @@ bool Xdrv36(uint8_t function)
 
   switch (function) {
     case FUNC_COMMAND:
-      AddLog_P(LOG_LEVEL_DEBUG_MORE, PSTR("calling command"));
+      AddLog(LOG_LEVEL_DEBUG_MORE, PSTR("calling command"));
       result = DecodeCommand(kJaroliftCommands, jaroliftCommand);
       break;
     case FUNC_INIT:

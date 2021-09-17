@@ -1,7 +1,7 @@
 /*
   support_rtc.ino - Real Time Clock support for Tasmota
 
-  Copyright (C) 2020  Theo Arends
+  Copyright (C) 2021  Theo Arends
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -33,8 +33,8 @@ const uint32_t MINS_PER_HOUR = 60UL;
 
 Ticker TickerRtc;
 
-static const uint8_t kDaysInMonth[] = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 }; // API starts months from 1, this array starts from 0
-static const char kMonthNamesEnglish[] = "JanFebMarAprMayJunJulAugSepOctNovDec";
+static const uint8_t kDaysInMonth[] PROGMEM = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 }; // API starts months from 1, this array starts from 0
+static const char kMonthNamesEnglish[] PROGMEM = "JanFebMarAprMayJunJulAugSepOctNovDec";
 
 struct RTC {
   uint32_t utc_time = 0;
@@ -77,7 +77,7 @@ bool MidnightNow(void)
 
 bool IsDst(void)
 {
-  if (Rtc.time_timezone == Settings.toffset[1]) {
+  if (Rtc.time_timezone == Settings->toffset[1]) {
     return true;
   }
   return false;
@@ -88,7 +88,9 @@ String GetBuildDateAndTime(void)
   // "2017-03-07T11:08:02" - ISO8601:2004
   char bdt[21];
   char *p;
-  char mdate[] = __DATE__;  // "Mar  7 2017"
+  static const char mdate_P[] PROGMEM = __DATE__;  // "Mar  7 2017"
+  char mdate[strlen_P(mdate_P)+1];      // copy on stack first
+  strcpy_P(mdate, mdate_P);
   char *smonth = mdate;
   int day = 0;
   int year = 0;
@@ -107,8 +109,10 @@ String GetBuildDateAndTime(void)
       year = atoi(str);
     }
   }
-  int month = (strstr(kMonthNamesEnglish, smonth) -kMonthNamesEnglish) /3 +1;
-  snprintf_P(bdt, sizeof(bdt), PSTR("%d" D_YEAR_MONTH_SEPARATOR "%02d" D_MONTH_DAY_SEPARATOR "%02d" D_DATE_TIME_SEPARATOR "%s"), year, month, day, __TIME__);
+  char MonthNamesEnglish[sizeof(kMonthNamesEnglish)];
+  strcpy_P(MonthNamesEnglish, kMonthNamesEnglish);
+  int month = (strstr(MonthNamesEnglish, smonth) -MonthNamesEnglish) /3 +1;
+  snprintf_P(bdt, sizeof(bdt), PSTR("%d" D_YEAR_MONTH_SEPARATOR "%02d" D_MONTH_DAY_SEPARATOR "%02d" D_DATE_TIME_SEPARATOR "%s"), year, month, day, PSTR(__TIME__));
   return String(bdt);  // 2017-03-07T11:08:02
 }
 
@@ -195,10 +199,10 @@ String GetDateAndTime(uint8_t time_type)
       time = Rtc.restart_time;
       break;
     case DT_ENERGY:
-      time = Settings.energy_kWhtotal_time;
+      time = Settings->energy_kWhtotal_time;
       break;
     case DT_BOOTCOUNT:
-      time = Settings.bootcount_reset_time;
+      time = Settings->bootcount_reset_time;
       break;
   }
   String dt = GetDT(time);  // 2017-03-07T11:08:02
@@ -210,7 +214,7 @@ String GetDateAndTime(uint8_t time_type)
     time_type = DT_LOCAL;
   }
 
-  if (Settings.flag3.time_append_timezone && (DT_LOCAL == time_type)) {  // SetOption52 - Append timezone to JSON time
+  if (Settings->flag3.time_append_timezone && (DT_LOCAL == time_type)) {  // SetOption52 - Append timezone to JSON time
     dt += GetTimeZone();    // 2017-03-07T11:08:02-07:00
   }
   return dt;  // 2017-03-07T11:08:02-07:00
@@ -290,7 +294,7 @@ void BreakTime(uint32_t time_input, TIME_T &tm)
         month_length = 28;
       }
     } else {
-      month_length = kDaysInMonth[month];
+      month_length = pgm_read_byte(&kDaysInMonth[month]);
     }
 
     if (time >= month_length) {
@@ -326,7 +330,7 @@ uint32_t MakeTime(TIME_T &tm)
     if ((2 == i) && LEAP_YEAR(tm.year)) {
       seconds += SECS_PER_DAY * 29;
     } else {
-      seconds += SECS_PER_DAY * kDaysInMonth[i-1];  // monthDay array starts from 0
+      seconds += SECS_PER_DAY * pgm_read_byte(&kDaysInMonth[i-1]);  // monthDay array starts from 0
     }
   }
   seconds+= (tm.day_of_month - 1) * SECS_PER_DAY;
@@ -388,11 +392,10 @@ void RtcSecond(void)
     TIME_T tmpTime;
     BreakTime(Rtc.utc_time, tmpTime);
     RtcTime.year = tmpTime.year + 1970;
-    Rtc.daylight_saving_time = RuleToTime(Settings.tflag[1], RtcTime.year);
-    Rtc.standard_time = RuleToTime(Settings.tflag[0], RtcTime.year);
+    Rtc.daylight_saving_time = RuleToTime(Settings->tflag[1], RtcTime.year);
+    Rtc.standard_time = RuleToTime(Settings->tflag[0], RtcTime.year);
 
-    // Do not use AddLog_P( here (interrupt routine) if syslog or mqttlog is enabled. UDP/TCP will force exception 9
-    PrepLog_P(LOG_LEVEL_DEBUG, PSTR("RTC: " D_UTC_TIME " %s, " D_DST_TIME " %s, " D_STD_TIME " %s"),
+    AddLog(LOG_LEVEL_DEBUG, PSTR("RTC: " D_UTC_TIME " %s, " D_DST_TIME " %s, " D_STD_TIME " %s"),
       GetDateAndTime(DT_UTC).c_str(), GetDateAndTime(DT_DST).c_str(), GetDateAndTime(DT_STD).c_str());
 
     if (Rtc.local_time < START_VALID_TIME) {  // 2016-01-01
@@ -406,20 +409,19 @@ void RtcSecond(void)
   Rtc.millis = millis();
 
   if ((Rtc.utc_time > (2 * 60 * 60)) && (last_sync < Rtc.utc_time - (2 * 60 * 60))) {  // Every two hours a warning
-    // Do not use AddLog_P( here (interrupt routine) if syslog or mqttlog is enabled. UDP/TCP will force exception 9
-    PrepLog_P(LOG_LEVEL_DEBUG, PSTR("RTC: Not synced"));
+    AddLog(LOG_LEVEL_DEBUG, PSTR("RTC: Not synced"));
     last_sync = Rtc.utc_time;
   }
 
   Rtc.local_time = Rtc.utc_time;
   if (Rtc.local_time > START_VALID_TIME) {  // 2016-01-01
-    int16_t timezone_minutes = Settings.timezone_minutes;
-    if (Settings.timezone < 0) { timezone_minutes *= -1; }
-    Rtc.time_timezone = (Settings.timezone * SECS_PER_HOUR) + (timezone_minutes * SECS_PER_MIN);
-    if (99 == Settings.timezone) {
-      int32_t dstoffset = Settings.toffset[1] * SECS_PER_MIN;
-      int32_t stdoffset = Settings.toffset[0] * SECS_PER_MIN;
-      if (Settings.tflag[1].hemis) {
+    int16_t timezone_minutes = Settings->timezone_minutes;
+    if (Settings->timezone < 0) { timezone_minutes *= -1; }
+    Rtc.time_timezone = (Settings->timezone * SECS_PER_HOUR) + (timezone_minutes * SECS_PER_MIN);
+    if (99 == Settings->timezone) {
+      int32_t dstoffset = Settings->toffset[1] * SECS_PER_MIN;
+      int32_t stdoffset = Settings->toffset[0] * SECS_PER_MIN;
+      if (Settings->tflag[1].hemis) {
         // Southern hemisphere
         if ((Rtc.utc_time >= (Rtc.standard_time - dstoffset)) && (Rtc.utc_time < (Rtc.daylight_saving_time - stdoffset))) {
           Rtc.time_timezone = stdoffset;  // Standard Time
@@ -437,11 +439,11 @@ void RtcSecond(void)
     }
     Rtc.local_time += Rtc.time_timezone;
     Rtc.time_timezone /= 60;
-    if (!Settings.energy_kWhtotal_time) {
-      Settings.energy_kWhtotal_time = Rtc.local_time;
+    if (!Settings->energy_kWhtotal_time) {
+      Settings->energy_kWhtotal_time = Rtc.local_time;
     }
-    if (Settings.bootcount_reset_time < START_VALID_TIME) {
-      Settings.bootcount_reset_time = Rtc.local_time;
+    if (Settings->bootcount_reset_time < START_VALID_TIME) {
+      Settings->bootcount_reset_time = Rtc.local_time;
     }
   }
 
@@ -454,6 +456,14 @@ void RtcSecond(void)
       Rtc.midnight = Rtc.local_time;
       Rtc.midnight_now = true;
     }
+
+    if (mutex) {  // Time is just synced and is valid
+      // Sync Core/RTOS time to be used by file system time stamps
+      struct timeval tv;
+      tv.tv_sec = Rtc.local_time;
+      tv.tv_usec = 0;
+      settimeofday(&tv, nullptr);
+    }
   }
 
   RtcTime.year += 1970;
@@ -464,7 +474,7 @@ void RtcSecond(void)
 void RtcSync(void) {
   Rtc.time_synced = true;
   RtcSecond();
-//  AddLog_P(LOG_LEVEL_DEBUG, PSTR("RTC: Synced"));
+//  AddLog(LOG_LEVEL_DEBUG, PSTR("RTC: Synced"));
 }
 
 void RtcSetTime(uint32_t epoch) {
@@ -481,4 +491,8 @@ void RtcInit(void) {
   Rtc.utc_time = 0;
   BreakTime(Rtc.utc_time, RtcTime);
   TickerRtc.attach(1, RtcSecond);
+}
+
+void RtcPreInit(void) {
+  Rtc.millis = millis();
 }
